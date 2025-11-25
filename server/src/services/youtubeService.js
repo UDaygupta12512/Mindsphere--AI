@@ -1,4 +1,4 @@
-// YouTube Video Fetching Service
+// You
 // Uses YouTube Data API to search for educational videos related to lesson topics
 
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
@@ -126,10 +126,9 @@ export const searchYoutubeVideos = async (topic, maxResults = 3) => {
  * @param {string} lessonTitle - Title of the lesson
  * @returns {Promise<Object>} Object with videoId, videoUrl, title, and thumbnail
  */
-export const getYoutubeVideoForLesson = async (lessonTitle) => {
-  // Just use lesson title for cleaner search queries
-  const searchQuery = lessonTitle.trim();
-  
+export const getYoutubeVideoForLesson = async (lessonTitle, courseTopic = '') => {
+  // Add context keywords for better search results
+  const searchQuery = `${lessonTitle.trim()} ${courseTopic} tutorial education`;
   try {
     const videos = await searchYoutubeVideos(searchQuery, 1);
     
@@ -170,37 +169,4 @@ export const getYoutubeVideoForLesson = async (lessonTitle) => {
  * Get YouTube videos for all lessons in a course
  * @param {Array} lessons - Array of lesson objects with title and content
  * @param {string} courseTopic - Topic of the course
- * @returns {Promise<Array>} Array of lessons with videoUrl added
- */
-export const getYoutubeVideosForLessons = async (lessons, courseTopic) => {
-  if (!YOUTUBE_API_KEY) {
-    console.warn('⚠️ YOUTUBE_API_KEY not set. Skipping YouTube video fetching.');
-    return lessons;
-  }
-
-  try {
-    console.log(`🎬 Fetching YouTube videos for ${lessons.length} lessons...`);
-    
-    const lessonsWithVideos = await Promise.all(
-      lessons.map(async (lesson) => {
-        try {
-          const videoData = await getYoutubeVideoForLesson(lesson.title);
-          return {
-            ...lesson,
-            videoUrl: videoData?.videoUrl || null,
-            videoId: videoData?.videoId || null
-          };
-        } catch (error) {
-          console.error(`Error fetching video for lesson "${lesson.title}":`, error.message);
-          return lesson;
-        }
-      })
-    );
-
-    console.log(`✅ Completed fetching YouTube videos for lessons`);
-    return lessonsWithVideos;
-  } catch (error) {
-    console.error('❌ Error fetching YouTube videos for lessons:', error.message);
-    return lessons;
-  }
-};
+ * @returns {Promise<Array>} Array of lessons with videoUrl
