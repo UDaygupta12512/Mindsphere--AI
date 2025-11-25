@@ -123,31 +123,58 @@ export const searchYoutubeVideos = async (topic, maxResults = 3) => {
 
 /**
  * Get the best YouTube video URL for a lesson topic
- * Uses the lesson title directly as the search query.
+ * Returns an exact match with duration >= 10 minutes, or the closest approximate video if not found.
  * @param {string} lessonTitle - Title of the lesson
  * @param {string} courseTopic - Topic of the course
- * @returns {Promise<Object>} Object with videoId, videoUrl, title, and thumbnail
+ * @returns {Promise<Object|null>} Object with videoId, videoUrl, title, and thumbnail, or null if not found
  */
 export const getYoutubeVideoForLesson = async (lessonTitle, courseTopic = '') => {
   // Use the lesson title directly as the search query
   const searchQuery = lessonTitle.trim();
   try {
     console.log(`🔍 Search Query: ${searchQuery}`);
-    const videos = await searchYoutubeVideos(searchQuery, 5); // Fetch more results for better filtering
+    const videos = await searchYoutubeVideos(searchQuery, 10); // Fetch more results for better filtering
 
     if (videos.length === 0) {
       console.warn(`⚠️ No videos found for "${lessonTitle}".`);
       return null;
     }
 
-    // Select the first video as the best match
-    const bestVideo = videos[0];
-    console.log(`✅ Best Video: ${JSON.stringify(bestVideo, null, 2)}`);
+    // Find a video with exact title match and duration >= 10 minutes (600 seconds)
+    const exactMatch = videos.find(video =>
+      video.title.trim().toLowerCase() === lessonTitle.trim().toLowerCase() && video.duration >= 600
+    );
+
+    if (exactMatch) {
+      console.log(`✅ Exact Match Video: ${JSON.stringify(exactMatch, null, 2)}`);
+      return {
+        videoId: exactMatch.id,
+        videoUrl: `https://www.youtube.com/embed/${exactMatch.id}?rel=0&modestbranding=1`,
+        title: exactMatch.title,
+        thumbnail: exactMatch.thumbnail
+      };
+    }
+
+    // If no exact match, find the closest approximate video with duration >= 10 minutes
+    const approxMatch = videos.find(video => video.duration >= 600);
+    if (approxMatch) {
+      console.log(`⚠️ Approximate Match Video: ${JSON.stringify(approxMatch, null, 2)}`);
+      return {
+        videoId: approxMatch.id,
+        videoUrl: `https://www.youtube.com/embed/${approxMatch.id}?rel=0&modestbranding=1`,
+        title: approxMatch.title,
+        thumbnail: approxMatch.thumbnail
+      };
+    }
+
+    // If no video >= 10 minutes, return the first available video
+    const fallbackVideo = videos[0];
+    console.log(`⚠️ Fallback Video: ${JSON.stringify(fallbackVideo, null, 2)}`);
     return {
-      videoId: bestVideo.id,
-      videoUrl: `https://www.youtube.com/embed/${bestVideo.id}?rel=0&modestbranding=1`,
-      title: bestVideo.title,
-      thumbnail: bestVideo.thumbnail
+      videoId: fallbackVideo.id,
+      videoUrl: `https://www.youtube.com/embed/${fallbackVideo.id}?rel=0&modestbranding=1`,
+      title: fallbackVideo.title,
+      thumbnail: fallbackVideo.thumbnail
     };
   } catch (error) {
     console.error('❌ Error getting YouTube video for lesson:', error.message);
