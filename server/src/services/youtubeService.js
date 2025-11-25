@@ -123,41 +123,31 @@ export const searchYoutubeVideos = async (topic, maxResults = 3) => {
 
 /**
  * Get the best YouTube video URL for a lesson topic
+ * Uses the lesson title directly as the search query.
  * @param {string} lessonTitle - Title of the lesson
+ * @param {string} courseTopic - Topic of the course
  * @returns {Promise<Object>} Object with videoId, videoUrl, title, and thumbnail
  */
 export const getYoutubeVideoForLesson = async (lessonTitle, courseTopic = '') => {
-  // Add context keywords for better search results
-  const searchQuery = `${lessonTitle.trim()} ${courseTopic} tutorial education`;
+  // Use the lesson title directly as the search query
+  const searchQuery = lessonTitle.trim();
   try {
-    const videos = await searchYoutubeVideos(searchQuery, 1);
-    
+    console.log(`🔍 Search Query: ${searchQuery}`);
+    const videos = await searchYoutubeVideos(searchQuery, 5); // Fetch more results for better filtering
+
     if (videos.length === 0) {
-      // If no results, try searching with fewer keywords (first 5 words)
-      const words = lessonTitle.split(' ').slice(0, 5).join(' ');
-      console.log(`📺 Fallback: Searching for "${words}" only`);
-      const fallbackVideos = await searchYoutubeVideos(words, 1);
-      
-      if (fallbackVideos.length === 0) {
-        console.warn(`⚠️ No videos found for "${lessonTitle}"`);
-        return null;
-      }
-      
-      const video = fallbackVideos[0];
-      return {
-        videoId: video.id,
-        videoUrl: `https://www.youtube.com/embed/${video.id}?rel=0&modestbranding=1`,
-        title: video.title,
-        thumbnail: video.thumbnail
-      };
+      console.warn(`⚠️ No videos found for "${lessonTitle}".`);
+      return null;
     }
 
-    const video = videos[0];
+    // Select the first video as the best match
+    const bestVideo = videos[0];
+    console.log(`✅ Best Video: ${JSON.stringify(bestVideo, null, 2)}`);
     return {
-      videoId: video.id,
-      videoUrl: `https://www.youtube.com/embed/${video.id}?rel=0&modestbranding=1`,
-      title: video.title,
-      thumbnail: video.thumbnail
+      videoId: bestVideo.id,
+      videoUrl: `https://www.youtube.com/embed/${bestVideo.id}?rel=0&modestbranding=1`,
+      title: bestVideo.title,
+      thumbnail: bestVideo.thumbnail
     };
   } catch (error) {
     console.error('❌ Error getting YouTube video for lesson:', error.message);
@@ -170,3 +160,16 @@ export const getYoutubeVideoForLesson = async (lessonTitle, courseTopic = '') =>
  * @param {Array} lessons - Array of lesson objects with title and content
  * @param {string} courseTopic - Topic of the course
  * @returns {Promise<Array>} Array of lessons with videoUrl
+ */
+export const getYoutubeVideosForLessons = async (lessons, courseTopic) => {
+  const updatedLessons = await Promise.all(
+    lessons.map(async (lesson) => {
+      const video = await getYoutubeVideoForLesson(lesson.title, courseTopic);
+      return {
+        ...lesson,
+        videoUrl: video ? video.videoUrl : null,
+      };
+    })
+  );
+  return updatedLessons;
+};
