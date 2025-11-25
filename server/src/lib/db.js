@@ -1,7 +1,5 @@
 import mongoose from 'mongoose';
 
-import mongoose from 'mongoose';
-
 export const connectDB = async () => {
   try {
     // Check if MongoDB URI exists
