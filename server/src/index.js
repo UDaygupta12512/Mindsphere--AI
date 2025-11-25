@@ -9,6 +9,9 @@ import coursesRoutes from './routes/courses.js';
 import catalogRoutes from './routes/catalog.js';
 import chatRoutes from './routes/chat.js';
 import analyticsRoutes from './routes/analytics.js';
+import quizRoutes from './routes/quiz.js';
+import flashcardsRoutes from './routes/flashcards.js';
+import lessonsRoutes from './routes/lessons.js';
 
 dotenv.config();
 
@@ -32,6 +35,9 @@ app.use('/api/courses', coursesRoutes);
 app.use('/api/catalog', catalogRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/quiz', quizRoutes);
+app.use('/api/flashcards', flashcardsRoutes);
+app.use('/api/lessons', lessonsRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Route not found' });

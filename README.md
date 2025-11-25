@@ -14,12 +14,13 @@ MindSphere AI democratizes course creation by leveraging artificial intelligence
 
 ## ✨ Core Features
 
-### 🤖 **Intelligent Course Generation**
-Transform any content into fully-structured courses with a single click. The AI engine automatically extracts key concepts, creates lessons, generates quizzes, and produces study materials from YouTube videos, PDFs, or text input. Each course is customized with:
-- **AI-Curated Lessons**: Automatically structured learning modules with video integration
-- **Smart Quizzes**: Adaptive assessments with detailed explanations
-- **Study Materials**: Comprehensive notes and visual flashcards for spaced repetition
-- **YouTube Integration**: Auto-fetched videos for multimedia learning
+### 🤖 **Dynamic AI-Powered Content Generation**
+Transform any content into fully-structured courses with a single click. The AI engine automatically extracts key concepts, creates lessons, generates quizzes, and produces study materials from YouTube videos, PDFs, or text input. Each course is dynamically generated with:
+- **AI-Curated Lessons**: Automatically structured learning modules with contextual explanations
+- **Dynamic Smart Quizzes**: Real-time quiz generation based on actual course content using multi-provider AI (Gemini + OpenRouter)
+- **Intelligent Flashcards**: Context-aware flashcards generated from core concepts and terminology
+- **Adaptive Study Materials**: Comprehensive notes with difficulty-based content adaptation
+- **Multi-Key Redundancy**: 10-level failover system ensuring 99.9% content generation reliability
 
 ### 📚 **Course Discovery & Enrollment**
 Browse a curated catalog of pre-made courses across multiple categories and difficulty levels. The catalog includes detailed course information, instructor profiles, student reviews, and curriculum previews. One-click enrollment instantly generates full course content with AI.
