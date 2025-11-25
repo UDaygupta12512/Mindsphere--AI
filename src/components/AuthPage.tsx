@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState } from 'react'; 
 import { authApi, setToken } from '../lib/api';
 
 const AuthPage: React.FC = () => {
