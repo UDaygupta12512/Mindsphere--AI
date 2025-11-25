@@ -78,7 +78,7 @@ async function apiRequest<T>(
 // API methods
 export const api = {
   // GET request
-  get: <T>(endpoint: string): Promise<T> => {
+    get: <T>(endpoint: string): Promise<T> => { 
     return apiRequest<T>(endpoint, { method: 'GET' });
   },
 
