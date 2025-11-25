@@ -1,0 +1,19 @@
+{
+  "functions": {
+    "server/src/index.js": {
+      "runtime": "nodejs18.x"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/server/src/index.js"
+    }
+  ],
+  "env": {
+    "MONGODB_URI": "@mongodb_uri",
+    "JWT_SECRET": "@jwt_secret",
+    "GEMINI_API_KEY": "@gemini_api_key",
+    "OPENROUTER_API_KEY": "@openrouter_api_key"
+  }
+}
