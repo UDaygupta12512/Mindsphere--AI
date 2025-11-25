@@ -40,6 +40,7 @@ app.use('/api/flashcards', flashcardsRoutes);
 app.use('/api/lessons', lessonsRoutes);
 
 app.use((req, res) => {
+  console.log(`404 Error: Route not found for ${req.method} ${req.url}`);
   res.status(404).json({ error: 'Route not found' });
 });
 
