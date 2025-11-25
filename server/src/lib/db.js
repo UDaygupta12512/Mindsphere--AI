@@ -10,14 +10,10 @@ export const connectDB = async () => {
     console.log('🔗 Connecting to MongoDB...');
     console.log('📍 Environment:', process.env.NODE_ENV || 'development');
     
-    // Add connection options for better Vercel compatibility
+    // Simplified connection options for compatibility
     const options = {
       serverSelectionTimeoutMS: 10000, // 10 seconds timeout
       socketTimeoutMS: 45000, // 45 seconds socket timeout
-      bufferCommands: false, // Disable mongoose buffering
-      bufferMaxEntries: 0, // Disable mongoose buffering
-      maxPoolSize: 10, // Maximum number of connections in the pool
-      minPoolSize: 5, // Minimum number of connections in the pool
     };
 
     const conn = await mongoose.connect(process.env.MONGODB_URI, options);
