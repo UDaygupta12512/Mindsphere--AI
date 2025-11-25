@@ -12,6 +12,7 @@ import analyticsRoutes from './routes/analytics.js';
 import quizRoutes from './routes/quiz.js';
 import flashcardsRoutes from './routes/flashcards.js';
 import lessonsRoutes from './routes/lessons.js';
+import youtubeTestRoutes from './routes/youtubeTest.js';
 
 dotenv.config();
 
@@ -38,6 +39,7 @@ app.use('/api/analytics', analyticsRoutes);
 app.use('/api/quiz', quizRoutes);
 app.use('/api/flashcards', flashcardsRoutes);
 app.use('/api/lessons', lessonsRoutes);
+app.use('/api/test', youtubeTestRoutes);
 
 app.use((req, res) => {
   console.log(`404 Error: Route not found for ${req.method} ${req.url}`);

@@ -20,100 +20,295 @@ let genAI = null;
 let geminiModel = null;
 let aiInitialized = false;
 
+// Multi-key rotation variables
+let geminiKeys = [];
+let openrouterKeys = [];
+let currentGeminiIndex = 0;
+let currentOpenRouterIndex = 0;
+
+// Gemini model fallback chain
+const geminiModels = [
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite', 
+  'gemini-2.5-pro'
+];
+let currentModelIndex = 0;
+
+// OpenRouter model configurations
+const openrouterModels = {
+  contentGeneration: ['openai/gpt-4o', 'openai/gpt-3.5-turbo'], // For quiz, flashcards, etc.
+  chat: ['openai/gpt-3.5-turbo'] // For chatbot
+};
+
 function initializeAI() {
   if (aiInitialized) return;
   
+  // Initialize Gemini keys (support multiple keys)
+  geminiKeys = [];
   const geminiKey = process.env.GEMINI_API_KEY;
-  if (geminiKey) {
+  const geminiKey2 = process.env.GEMINI_API_KEY_2;
+  const geminiKey3 = process.env.GEMINI_API_KEY_3;
+  const geminiKeysEnv = process.env.GEMINI_API_KEYS; // Comma-separated
+  
+  if (geminiKeysEnv) {
+    geminiKeys = geminiKeysEnv.split(',').map(k => k.trim()).filter(k => k.length > 0);
+  }
+  
+  [geminiKey, geminiKey2, geminiKey3].forEach(key => {
+    if (key && !geminiKeys.includes(key)) {
+      geminiKeys.push(key);
+    }
+  });
+  
+  if (geminiKeys.length > 0) {
     try {
-      genAI = new GoogleGenerativeAI(geminiKey);
-      geminiModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-      console.log('✅ Gemini AI initialized');
+      genAI = new GoogleGenerativeAI(geminiKeys[0]);
+      geminiModel = genAI.getGenerativeModel({ model: geminiModels[0] }); // Use first model from fallback chain
+      console.log(`✅ Gemini AI initialized with ${geminiKeys.length} key(s) and ${geminiModels.length} fallback models`);
     } catch (e) {
       console.error('Failed to initialize Gemini:', e.message);
     }
   }
   
-  const openrouterKey = process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY;
-  if (openrouterKey) {
-    console.log('✅ OpenRouter API key available');
+  // Initialize OpenRouter keys (support multiple keys)
+  openrouterKeys = [];
+  const openrouterKey = process.env.OPENROUTER_API_KEY;
+  const openrouterKey2 = process.env.OPENROUTER_API_KEY_2;
+  const openaiKey = process.env.OPENAI_API_KEY;
+  const openaiKey2 = process.env.OPENAI_API_KEY_2;
+  const openrouterKeysEnv = process.env.OPENROUTER_API_KEYS; // Comma-separated
+  
+  if (openrouterKeysEnv) {
+    openrouterKeys = openrouterKeysEnv.split(',').map(k => k.trim()).filter(k => k.length > 0);
   }
   
-  if (!geminiKey && !openrouterKey) {
+  [openrouterKey, openrouterKey2, openaiKey, openaiKey2].forEach(key => {
+    if (key && !openrouterKeys.includes(key)) {
+      openrouterKeys.push(key);
+    }
+  });
+  
+  if (openrouterKeys.length > 0) {
+    console.log(`✅ OpenRouter initialized with ${openrouterKeys.length} key(s)`);
+  }
+  
+  if (geminiKeys.length === 0 && openrouterKeys.length === 0) {
     console.warn('⚠️ No AI API keys configured');
   }
   
   aiInitialized = true;
 }
 
-// Call Gemini API with retry
+// Call Gemini API with key rotation and model fallback
 async function callGemini(prompt) {
   initializeAI();
   
-  if (!geminiModel) {
-    throw new Error('Gemini not initialized');
+  if (geminiKeys.length === 0) {
+    throw new Error('No Gemini keys available');
   }
   
+  let lastError;
+  
+  // Try each model in the fallback chain
+  for (let modelIdx = 0; modelIdx < geminiModels.length; modelIdx++) {
+    const currentModel = geminiModels[modelIdx];
+    console.log(`🔄 Trying Gemini model: ${currentModel}`);
+    
+    // Try all keys for this model
+    const maxKeyAttempts = Math.min(geminiKeys.length, 3);
+    let modelFailed = false;
+    
+    for (let keyAttempt = 0; keyAttempt < maxKeyAttempts; keyAttempt++) {
+      const currentKey = geminiKeys[currentGeminiIndex];
+      
+      try {
+        console.log(`🤖 Calling Gemini ${currentModel} with key ${currentGeminiIndex + 1}/${geminiKeys.length}...`);
+        
+        // Initialize with current key and model
+        const tempGenAI = new GoogleGenerativeAI(currentKey);
+        const tempModel = tempGenAI.getGenerativeModel({ model: currentModel });
+        
+        const result = await tempModel.generateContent(prompt);
+        const response = await result.response;
+        const text = response.text();
+        
+        console.log(`✅ Gemini response received from ${currentModel} with key ${currentGeminiIndex + 1}`);
+        return text;
+      } catch (error) {
+        lastError = error;
+        console.error(`❌ Gemini ${currentModel} key ${currentGeminiIndex + 1} failed:`, error.message);
+        
+        // Move to next key
+        currentGeminiIndex = (currentGeminiIndex + 1) % geminiKeys.length;
+        
+        // Small delay before next attempt
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+    
+    // If we get here, all keys failed for this model
+    console.log(`❌ All keys failed for ${currentModel}, trying next model...`);
+  }
+  
+  // If all models and keys failed, throw the last error
+  throw lastError || new Error('All Gemini models and keys failed');
+}
+
+// Call OpenRouter API for content generation with model and key rotation
+async function callOpenRouterForContent(prompt) {
+  initializeAI();
+  
+  if (openrouterKeys.length === 0) {
+    throw new Error('No OpenRouter keys available');
+  }
+  
+  let lastError;
+  const modelsToTry = openrouterModels.contentGeneration;
+  
+  // Try each model in the fallback chain
+  for (let modelIdx = 0; modelIdx < modelsToTry.length; modelIdx++) {
+    const currentModel = modelsToTry[modelIdx];
+    console.log(`🔄 Trying OpenRouter model: ${currentModel}`);
+    
+    // Try all keys for this model
+    const maxKeyAttempts = Math.min(openrouterKeys.length, 3);
+    
+    for (let keyAttempt = 0; keyAttempt < maxKeyAttempts; keyAttempt++) {
+      const currentKey = openrouterKeys[currentOpenRouterIndex];
+      
+      try {
+        console.log(`🤖 Calling OpenRouter ${currentModel} with key ${currentOpenRouterIndex + 1}/${openrouterKeys.length}...`);
+        
+        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${currentKey}`,
+            'Content-Type': 'application/json',
+            'HTTP-Referer': process.env.SITE_URL || 'https://mindsphere.vercel.app',
+            'X-Title': 'MindSphere AI'
+          },
+          body: JSON.stringify({
+            model: currentModel,
+            messages: [{ role: 'user', content: prompt }],
+            max_tokens: 4000,
+            temperature: 0.7
+          })
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(`OpenRouter error: ${response.status} - ${errorData.error?.message || response.statusText}`);
+        }
+
+        const data = await response.json();
+        const content = data.choices?.[0]?.message?.content;
+        
+        if (!content) {
+          throw new Error('No content in OpenRouter response');
+        }
+        
+        console.log(`✅ OpenRouter response received from ${currentModel} with key ${currentOpenRouterIndex + 1}`);
+        return content;
+      } catch (error) {
+        lastError = error;
+        console.error(`❌ OpenRouter ${currentModel} key ${currentOpenRouterIndex + 1} failed:`, error.message);
+        
+        // Move to next key
+        currentOpenRouterIndex = (currentOpenRouterIndex + 1) % openrouterKeys.length;
+        
+        // Small delay before next attempt
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+    
+    console.log(`❌ All keys failed for ${currentModel}, trying next model...`);
+  }
+  
+  throw lastError || new Error('All OpenRouter models and keys failed');
+}
+
+// Call OpenRouter API for chat (uses 3.5-turbo only)
+async function callOpenRouterForChat(prompt) {
+  initializeAI();
+  
+  if (openrouterKeys.length === 0) {
+    throw new Error('No OpenRouter keys available');
+  }
+  
+  let lastError;
+  const model = openrouterModels.chat[0]; // Always use 3.5-turbo for chat
+  const maxAttempts = Math.min(openrouterKeys.length, 3);
+  
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const currentKey = openrouterKeys[currentOpenRouterIndex];
+    
+    try {
+      console.log(`💬 Calling OpenRouter chat with ${model} and key ${currentOpenRouterIndex + 1}/${openrouterKeys.length}...`);
+      
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${currentKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': process.env.SITE_URL || 'https://mindsphere.vercel.app',
+          'X-Title': 'MindSphere AI'
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: 4000,
+          temperature: 0.7
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`OpenRouter error: ${response.status} - ${errorData.error?.message || response.statusText}`);
+      }
+
+      const data = await response.json();
+      const content = data.choices?.[0]?.message?.content;
+      
+      if (!content) {
+        throw new Error('No content in OpenRouter response');
+      }
+      
+      console.log(`✅ OpenRouter chat response received from key ${currentOpenRouterIndex + 1}`);
+      return content;
+    } catch (error) {
+      lastError = error;
+      console.error(`❌ OpenRouter chat key ${currentOpenRouterIndex + 1} failed:`, error.message);
+      
+      // Move to next key
+      currentOpenRouterIndex = (currentOpenRouterIndex + 1) % openrouterKeys.length;
+      
+      // Small delay before next attempt
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+  }
+  
+  throw lastError || new Error('All OpenRouter chat keys failed');
+}
+
+// Smart AI call for content generation (quiz, flashcards, etc.) - Uses OpenRouter first with model fallback
+async function callAIForContent(prompt) {
+  initializeAI();
+  
+  // Try OpenRouter first (GPT-4o -> 3.5-turbo)
   try {
-    console.log('🤖 Calling Gemini API...');
-    const result = await geminiModel.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
-    console.log('✅ Gemini response received');
-    return text;
-  } catch (error) {
-    console.error('❌ Gemini error:', error.message);
-    throw error;
+    return await callOpenRouterForContent(prompt);
+  } catch (openrouterError) {
+    console.log('OpenRouter failed, trying Gemini...');
+    try {
+      return await callGemini(prompt);
+    } catch (geminiError) {
+      console.error('Both AI services failed for content generation');
+      throw new Error('AI services unavailable');
+    }
   }
 }
 
-// Call OpenRouter API
-async function callOpenRouter(prompt, model = 'openai/gpt-3.5-turbo') {
-  const apiKey = process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY;
-  
-  if (!apiKey) {
-    throw new Error('No OpenRouter API key available');
-  }
-  
-  try {
-    console.log('🤖 Calling OpenRouter API...');
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': process.env.SITE_URL || 'https://mindsphere.vercel.app',
-        'X-Title': 'MindSphere AI'
-      },
-      body: JSON.stringify({
-        model: model,
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 4000,
-        temperature: 0.7
-      })
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(`OpenRouter error: ${response.status} - ${errorData.error?.message || response.statusText}`);
-    }
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
-    
-    if (!content) {
-      throw new Error('No content in OpenRouter response');
-    }
-    
-    console.log('✅ OpenRouter response received');
-    return content;
-  } catch (error) {
-    console.error('❌ OpenRouter error:', error.message);
-    throw error;
-  }
-}
-
-// Smart AI call with fallback
+// Smart AI call with fallback (legacy function)
 async function callAI(prompt) {
   initializeAI();
   
@@ -124,7 +319,7 @@ async function callAI(prompt) {
     } catch (geminiError) {
       console.log('Gemini failed, trying OpenRouter...');
       try {
-        return await callOpenRouter(prompt);
+        return await callOpenRouterForContent(prompt);
       } catch (openrouterError) {
         console.error('Both AI services failed');
         throw new Error('AI services unavailable');
@@ -134,7 +329,7 @@ async function callAI(prompt) {
   
   // Try OpenRouter if Gemini unavailable
   try {
-    return await callOpenRouter(prompt);
+    return await callOpenRouterForContent(prompt);
   } catch (openrouterError) {
     console.error('OpenRouter failed and no Gemini available');
     throw new Error('AI services unavailable');
@@ -613,7 +808,7 @@ Generate:
 
 Make content specific to ${catalogCourse.title} and its topics.`;
 
-    let generatedContent = await callAI(contentPrompt);
+    let generatedContent = await callAIForContent(contentPrompt);
     generatedContent = parseAIResponse(generatedContent);
     
     // Fallback content if AI fails
@@ -759,7 +954,7 @@ Return JSON:
 
 Mix difficulties. Vary correct answer positions (A, B, C, or D).`;
 
-    const aiResponse = await callAI(prompt);
+    const aiResponse = await callAIForContent(prompt);
     const result = parseAIResponse(aiResponse);
     
     if (result?.quizQuestions) {
@@ -800,7 +995,7 @@ Return JSON:
 Include key terms, concepts, and important facts.`;
 
     console.log('🗂️ Generating flashcards...');
-    const aiResponse = await callAI(prompt);
+    const aiResponse = await callAIForContent(prompt);
     const result = parseAIResponse(aiResponse);
     
     if (result?.flashcards) {
@@ -847,7 +1042,7 @@ Return JSON:
 Make lessons progressive, building on previous knowledge.`;
 
     console.log('📚 Generating lessons...');
-    const aiResponse = await callAI(prompt);
+    const aiResponse = await callAIForContent(prompt);
     const result = parseAIResponse(aiResponse);
     
     if (result?.lessons) {
@@ -896,7 +1091,7 @@ Return JSON:
 Each note should focus on a major concept with actionable takeaways.`;
 
     console.log('📝 Generating notes...');
-    const aiResponse = await callAI(prompt);
+    const aiResponse = await callAIForContent(prompt);
     const result = parseAIResponse(aiResponse);
     
     if (result?.notes) {
@@ -937,7 +1132,7 @@ Student question: ${message}
 
 Provide a clear, concise, and helpful response (2-4 sentences). Be educational and encouraging.`;
 
-    const text = await callOpenRouter(prompt);
+    const text = await callOpenRouterForChat(prompt);
     
     res.json({ 
       reply: text || `I understand you're asking about "${message}". This is an interesting topic! Let me help you understand it better. Could you provide more context about what specific aspect you'd like to explore?`
