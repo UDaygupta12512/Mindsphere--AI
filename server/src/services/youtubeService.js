@@ -58,6 +58,7 @@ export const searchYoutubeVideos = async (topic, maxResults = 3) => {
 
   try {
     console.log(`🔍 Searching YouTube for: "${topic}"`);
+    console.log('🔑 Using YOUTUBE_API_KEY:', YOUTUBE_API_KEY ? 'SET' : 'NOT SET');
     
     const searchParams = new URLSearchParams({
       part: 'snippet',
@@ -70,12 +71,14 @@ export const searchYoutubeVideos = async (topic, maxResults = 3) => {
     });
 
     const response = await fetch(`${YOUTUBE_API_BASE_URL}/search?${searchParams}`);
+    console.log('YouTube API Request URL:', `${YOUTUBE_API_BASE_URL}/search?${searchParams}`);
     
     if (!response.ok) {
       throw new Error(`YouTube API error: ${response.status}`);
     }
 
     const data = await response.json();
+    console.log('YouTube API Response:', JSON.stringify(data, null, 2));
     console.log(`✅ Found ${data.items?.length || 0} videos for "${topic}"`);
 
     if (!data.items || data.items.length === 0) {
