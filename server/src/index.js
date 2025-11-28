@@ -45,6 +45,11 @@ app.use('/api/flashcards', flashcardsRoutes);
 app.use('/api/lessons', lessonsRoutes);
 app.use('/api/test', youtubeTestRoutes);
 
+// Friendly root route for browser visits
+app.get('/', (req, res) => {
+  res.send('<h1>MindSphere v1.0 ✨</h1><p>API is running. Health: <a href="/api/health">/api/health</a></p>');
+});
+
 app.use((req, res) => {
   console.log(`404 Error: Route not found for ${req.method} ${req.url}`);
   res.status(404).json({ error: 'Route not found' });
