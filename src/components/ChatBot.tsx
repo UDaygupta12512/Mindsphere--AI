@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Send, Bot, User, Lightbulb } from 'lucide-react';
 import { ChatMessage } from '../types/course';
 import { chatApi } from '../lib/api';
+import './ChatBot.css'; // Import the CSS file for styling
 
 interface ChatBotProps {
   courses?: unknown[];
@@ -144,11 +145,10 @@ const ChatBot: React.FC<ChatBotProps> = () => {
                   <div className="flex-shrink-0 p-2 rounded-full bg-gradient-to-r from-purple-600 to-blue-600">
                     <Bot className="h-4 w-4 text-white" />
                   </div>
-                  <div className="bg-gray-100 p-4 rounded-2xl rounded-bl-sm">
-                    <div className="flex space-x-1">
-                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse"></div>
-                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse delay-75"></div>
-                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse delay-150"></div>
+                  <div className="bg-gradient-to-r from-gray-100 to-gray-200 p-3 rounded-xl shadow-md">
+                    <div className="flex items-center space-x-2">
+                      <p className="text-sm font-medium text-blue-600 animate-pulse">MindSphere is thinking...</p>
+                      <div className="spinner w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin"></div>
                     </div>
                   </div>
                 </div>
@@ -205,4 +205,4 @@ const ChatBot: React.FC<ChatBotProps> = () => {
   );
 };
 
-export default ChatBot; 
+export default ChatBot;
