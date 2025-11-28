@@ -55,11 +55,18 @@ const quizQuestionSchema = new mongoose.Schema({
   }
 }, { _id: false });
 
+
+const quizScoreSchema = new mongoose.Schema({
+  score: { type: Number, required: true },
+  completedAt: { type: Date, default: Date.now }
+}, { _id: false });
+
 const quizSchema = new mongoose.Schema({
   title: String,
   questions: [quizQuestionSchema],
   completedAt: Date,
-  score: Number
+  score: Number,
+  scores: [quizScoreSchema] // Store all attempts
 }, { _id: false });
 
 const flashcardSchema = new mongoose.Schema({

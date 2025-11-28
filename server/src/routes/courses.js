@@ -1,3 +1,5 @@
+
+
 import express from 'express';
 import Course from '../models/Course.js';
 import User from '../models/User.js';
@@ -10,6 +12,44 @@ const router = express.Router();
 
 // All routes require authentication
 router.use(authMiddleware);
+
+// PATCH /api/courses/:courseId/quizzes/:quizIndex/complete - Mark quiz as completed with score
+router.patch('/:courseId/quizzes/:quizIndex/complete', async (req, res) => {
+  try {
+    const { courseId, quizIndex } = req.params;
+    const { score, completedAt } = req.body;
+    console.log('PATCH /api/courses/:courseId/quizzes/:quizIndex/complete called');
+    console.log('Request params:', req.params);
+    console.log('Request body:', req.body);
+    const course = await Course.findOne({ _id: courseId, user: req.userId });
+    if (!course) {
+      console.log('Course not found for user:', req.userId);
+      return res.status(404).json({ error: 'Course not found' });
+    }
+    const idx = parseInt(quizIndex, 10);
+    if (!Array.isArray(course.quizzes) || idx < 0 || idx >= course.quizzes.length) {
+      console.log('Quiz not found at index:', idx);
+      return res.status(404).json({ error: 'Quiz not found' });
+    }
+    // Update quiz score and completedAt (latest attempt)
+    course.quizzes[idx].score = score;
+    course.quizzes[idx].completedAt = completedAt ? new Date(completedAt) : new Date();
+    // Store all attempts in scores array
+    if (!course.quizzes[idx].scores) course.quizzes[idx].scores = [];
+    course.quizzes[idx].scores.push({ score, completedAt: completedAt ? new Date(completedAt) : new Date() });
+    console.log('Quiz after update:', course.quizzes[idx]);
+    await course.save();
+    console.log('Course saved successfully.');
+    // Update user's lastActivityDate for analytics/streak tracking
+    await User.findByIdAndUpdate(req.userId, {
+      lastActivityDate: new Date()
+    });
+    res.json({ success: true, quiz: course.quizzes[idx] });
+  } catch (error) {
+    console.error('Complete quiz error:', error);
+    res.status(500).json({ error: 'Failed to complete quiz. Please try again.' });
+  }
+});
 
 // POST /api/courses/:courseId/notes/:noteIndex/comprehensive - Generate a comprehensive note for a section on demand
 router.post('/:courseId/notes/:noteIndex/comprehensive', async (req, res) => {

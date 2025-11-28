@@ -91,12 +91,35 @@ const QuizComponent: React.FC<QuizComponentProps> = ({ quizzes, onComplete, cour
     } else {
       // Quiz completed
       const totalQuestions = currentQuiz.questions.length;
-      const correctAnswers = currentQuiz.questions.filter((q, index) => {
-        const questionId = `${currentQuizIndex}-${index}`;
-        return answers[questionId] === q.correctAnswer || 
-               (index === currentQuestionIndex && selectedAnswer === q.correctAnswer);
-      }).length;
-      
+      // Count correct answers from answers object
+      let correctAnswers = 0;
+      for (let i = 0; i < totalQuestions; i++) {
+        const questionId = `${currentQuizIndex}-${i}`;
+        const userAnswer = answers[questionId];
+        const correctAnswer = currentQuiz.questions[i].correctAnswer;
+        // Use extractLetter to compare answers as in the result screen
+        const extractLetter = (answer, options) => {
+          if (!answer) return '';
+          if (/^[A-D]$/.test(answer)) return answer;
+          const match = answer.match(/^([A-D])\./);
+          if (match) return match[1];
+          if (options) {
+            for (let j = 0; j < options.length; j++) {
+              if (options[j] === answer) return String.fromCharCode(65 + j);
+            }
+          }
+          return '';
+        };
+        const userLetter = extractLetter(userAnswer, currentQuiz.questions[i].options);
+        const correctLetter = extractLetter(correctAnswer, currentQuiz.questions[i].options);
+        if (userLetter === correctLetter && userLetter !== '') correctAnswers++;
+      }
+      // Also check the last question if not already included
+      if (!answers.hasOwnProperty(`${currentQuizIndex}-${currentQuestionIndex}`)) {
+        const userLetter = extractLetter(selectedAnswer, currentQuestion.options);
+        const correctLetter = extractLetter(currentQuestion.correctAnswer, currentQuestion.options);
+        if (userLetter === correctLetter && userLetter !== '') correctAnswers++;
+      }
       const score = Math.round((correctAnswers / totalQuestions) * 100);
       setQuizCompleted(true);
       onComplete(score);

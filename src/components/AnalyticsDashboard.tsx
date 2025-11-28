@@ -1,8 +1,283 @@
-import React, { useEffect, useState } from 'react'; 
+import React, { useEffect, useState } from 'react';
+import jsPDF from 'jspdf';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { TrendingUp, Clock, BookOpen, Zap, Award, Flame, Activity, Target } from 'lucide-react';
 import { api } from '../lib/api';
 import { AnalyticsDashboardData } from '../types/analytics';
+
+// Helper to load image from URL as base64
+async function getImageBase64FromUrl(url: string): Promise<string> {
+  const response = await fetch(url);
+  const blob = await response.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+// Generate a highly visualized PDF report
+async function handleDownloadReport(analytics: AnalyticsDashboardData | null) {
+
+
+  if (!analytics) return;
+
+  // Initialize PDF - A4 size, pt units
+  const doc = new jsPDF('p', 'pt', 'a4');
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 40;
+
+  // Colors
+  const colors = {
+    primary: '#2563EB',    // Blue-600
+    secondary: '#1E40AF',  // Blue-800
+    accent: '#F59E0B',     // Amber-500
+    success: '#10B981',    // Emerald-500
+    text: '#1F2937',       // Gray-800
+    lightText: '#6B7280',  // Gray-500
+    bgLight: '#F3F4F6',    // Gray-100
+    white: '#FFFFFF'
+  };
+
+  // Helper: Add Header
+  const addHeader = (title: string) => {
+    doc.setFillColor(colors.primary);
+    doc.rect(0, 0, pageWidth, 60, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(24);
+    doc.setTextColor(colors.white);
+    doc.text(title, margin, 40);
+
+    // Add Logo/Brand placeholder if needed
+    doc.setFontSize(10);
+    doc.text('MindSphere Analytics', pageWidth - margin, 40, { align: 'right' });
+  };
+
+  // Helper: Add Footer
+  const addFooter = (pageNumber: number) => {
+    doc.setFillColor(colors.bgLight);
+    doc.rect(0, pageHeight - 30, pageWidth, 30, 'F');
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(colors.lightText);
+    doc.text(`Generated on ${new Date().toLocaleDateString()}`, margin, pageHeight - 12);
+    doc.text(`Page ${pageNumber}`, pageWidth - margin, pageHeight - 12, { align: 'right' });
+  };
+
+  // Page 1: Overview
+
+  addHeader('Learning Analytics Report');
+  addFooter(1);
+
+  // Start below the header (header height = 60), add extra breathing room
+  let yPos = 80;
+
+  // Student Info Section
+  if (analytics) {
+    const studentName = analytics.overview.name || 'Student';
+    const studentEmail = analytics.overview.email || 'N/A';
+    const joinedAt = analytics.overview.joinedAt || 'N/A';
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.setTextColor(colors.text);
+    doc.text(`Name: ${studentName}`, margin, yPos);
+    yPos += 18; // larger spacing to avoid header overlap
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(11);
+    doc.text(`Email: ${studentEmail}`, margin, yPos);
+    yPos += 16;
+    doc.text(`Enrolled: ${joinedAt}`, margin, yPos);
+    yPos += 20; // Extra space before next section
+  }
+
+  // Title Section
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(18);
+  doc.setTextColor(colors.text);
+  doc.text('Your Learning Journey', margin, yPos);
+  yPos += 30;
+
+  // Overview Stats Grid
+  const statBoxWidth = (pageWidth - 2 * margin - 20) / 2;
+  const statBoxHeight = 60;
+  const stats = [
+    { label: 'Total Courses Enrolled', value: analytics.overview.totalCoursesEnrolled, color: colors.primary },
+    { label: 'Courses Completed', value: analytics.overview.totalCoursesCompleted, color: colors.success },
+    { label: 'Average Quiz Score', value: `${analytics.overview.averageQuizScore}%`, color: colors.accent },
+    { label: 'Total Study Time', value: `${Math.round(analytics.overview.totalStudyTime / 60)}h`, color: colors.secondary },
+  ];
+
+  stats.forEach((stat, idx) => {
+    const col = idx % 2;
+    const row = Math.floor(idx / 2);
+    const x = margin + col * (statBoxWidth + 20);
+    const y = yPos + row * (statBoxHeight + 10);
+
+    doc.setFillColor(stat.color);
+    doc.roundedRect(x, y, statBoxWidth, statBoxHeight, 5, 5, 'F');
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.setTextColor(colors.white);
+    doc.text(stat.label, x + 10, y + 20);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(24);
+    doc.text(String(stat.value), x + 10, y + 45);
+  });
+
+  yPos += 2 * (statBoxHeight + 10) + 20;
+
+  // Streaks Section
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.setTextColor(colors.text);
+  doc.text('Learning Streaks', margin, yPos);
+  yPos += 25;
+
+  const streakData = [
+    { label: 'Current Streak', value: `${analytics.overview.currentStreak} days` },
+    { label: 'Longest Streak', value: `${analytics.overview.longestStreak} days` },
+    { label: 'Total Lessons Completed', value: analytics.overview.totalLessonsCompleted },
+  ];
+
+  streakData.forEach(item => {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(11);
+    doc.setTextColor(colors.text);
+    doc.text(`${item.label}:`, margin, yPos);
+    doc.setFont('helvetica', 'bold');
+    doc.text(String(item.value), margin + 150, yPos);
+    yPos += 20;
+  });
+
+
+  // Course Progress Summary (clear separation)
+  yPos += 12;
+  if (analytics) {
+    const completed = (analytics.courseProgress || []).filter(c => c.status === 'Completed').length;
+    const inProgress = (analytics.courseProgress || []).filter(c => c.status === 'In Progress').length;
+    const notStarted = (analytics.courseProgress || []).filter(c => c.status === 'Not Started').length;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.setTextColor(colors.text);
+    // Print the summary header on its own line
+    doc.text('Course Progress Summary', margin, yPos);
+    yPos += 16;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(11);
+    // Print counts on a separate line
+    doc.text(`Completed: ${completed}   In Progress: ${inProgress}   Not Started: ${notStarted}`, margin, yPos);
+    yPos += 22; // extra space to clearly separate sections
+  }
+
+  // Course Progress Section
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.setTextColor(colors.text);
+  doc.text('Course Progress', margin, yPos);
+  yPos += 25;
+
+  analytics.courseProgress.forEach(course => {
+    if (yPos > pageHeight - 100) {
+      doc.addPage();
+      addHeader('Learning Analytics Report');
+      addFooter(doc.getNumberOfPages());
+      yPos = 80;
+    }
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.setTextColor(colors.text);
+    doc.text(course.courseTitle, margin, yPos);
+    yPos += 14;
+
+    // Progress bar
+    const barWidth = pageWidth - 2 * margin;
+    const barHeight = 12;
+    doc.setFillColor(colors.bgLight);
+    doc.roundedRect(margin, yPos, barWidth, barHeight, 3, 3, 'F');
+    doc.setFillColor(colors.success);
+    doc.roundedRect(margin, yPos, (barWidth * course.progress) / 100, barHeight, 3, 3, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(colors.text);
+    doc.text(`${Math.round(course.progress)}%`, margin + barWidth - 30, yPos + 9);
+    yPos += barHeight + 10; // More space after each bar
+  });
+
+  // Save the PDF
+  // Quiz Summary Section
+  // Check if we need a new page before adding
+  if (yPos > pageHeight - 140) {
+    doc.addPage();
+    addHeader('Learning Analytics Report');
+    addFooter(doc.getNumberOfPages());
+    yPos = 80;
+  }
+  yPos += 10;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.setTextColor(colors.text);
+  doc.text('Quiz Summary', margin, yPos);
+  yPos += 18;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(11);
+  const quizDays = (analytics.dailyActivity || []).filter(d => (d.quizzesTaken || 0) > 0);
+  if (quizDays.length === 0) {
+    doc.text('No quizzes attempted in the selected period.', margin, yPos);
+    yPos += 15;
+  } else {
+    quizDays.forEach(d => {
+      const dateLabel = d.date ? new Date(d.date).toLocaleDateString() : 'Unknown date';
+      doc.text(`${dateLabel}: ${d.quizzesTaken} quiz${d.quizzesTaken > 1 ? 'zes' : ''} attempted`, margin, yPos);
+      yPos += 13;
+      if (yPos > pageHeight - 90) {
+        doc.addPage();
+        addHeader('Learning Analytics Report');
+        addFooter(doc.getNumberOfPages());
+        yPos = 80;
+      }
+    });
+  }
+
+  // Student Analysis Section
+  if (yPos > pageHeight - 140) {
+    doc.addPage();
+    addHeader('Learning Analytics Report');
+    addFooter(doc.getNumberOfPages());
+    yPos = 80;
+  }
+  yPos += 18;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.setTextColor(colors.text);
+  doc.text('Student Analysis', margin, yPos);
+  yPos += 18;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(11);
+  // Simple analysis based on progress and quiz
+  let analysis = '';
+  if ((analytics.overview.totalCoursesCompleted || 0) > 0) {
+    analysis += 'Great job completing your courses! ';
+  } else {
+    analysis += 'Keep working towards completing your courses. ';
+  }
+  if ((analytics.overview.averageQuizScore || 0) >= 70) {
+    analysis += 'Your quiz performance is strong.';
+  } else if ((analytics.overview.averageQuizScore || 0) >= 40) {
+    analysis += 'Your quiz performance is improving. Review weak areas for better results.';
+  } else {
+    analysis += 'Focus on reviewing course material and practicing quizzes to improve your scores.';
+  }
+  // Allow text wrapping within margins
+  doc.text(analysis, margin, yPos, { maxWidth: pageWidth - 2 * margin });
+  yPos += 30;
+
+  // Final footer update for current last page
+  addFooter(doc.getNumberOfPages());
+  doc.save('learning-analytics-report.pdf');
+}
 
 const AnalyticsDashboard: React.FC = () => {
   const [analytics, setAnalytics] = useState<AnalyticsDashboardData | null>(null);
@@ -20,7 +295,7 @@ const AnalyticsDashboard: React.FC = () => {
       console.log('Fetching analytics from /api/analytics...');
       const data = await api.get<AnalyticsDashboardData>('/api/analytics');
       console.log('Analytics data received:', data);
-      
+
       // Check if data has the expected structure
       if (data && typeof data === 'object' && 'data' in data) {
         setAnalytics((data as any).data);
@@ -105,12 +380,20 @@ const AnalyticsDashboard: React.FC = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 py-12 px-4">
       <div className="max-w-7xl mx-auto">
+        {/* Download Report Button */}
+        <div className="flex justify-end mb-4">
+          <button
+            className="bg-green-600 hover:bg-green-700 text-white font-semibold px-5 py-2 rounded-lg shadow transition-colors"
+            onClick={() => handleDownloadReport(analytics)}
+          >
+            📥 Download Report (PDF)
+          </button>
+        </div>
         {/* Header */}
         <div className="mb-12">
           <h1 className="text-4xl font-bold text-gray-900 mb-2">📊 Your Learning Analytics</h1>
           <p className="text-gray-600">Track your progress and celebrate your achievements</p>
         </div>
-
         {/* Overview Stats */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
           <StatCard
@@ -192,28 +475,35 @@ const AnalyticsDashboard: React.FC = () => {
             </ResponsiveContainer>
           </div>
 
-          {/* Course Progress Chart */}
+          {/* Enhanced Course Progress UI */}
           <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
             <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
               <BookOpen className="h-6 w-6 mr-3 text-green-600" />
               Course Progress
             </h2>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={courseProgressChartData} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                <XAxis type="number" stroke="#6b7280" />
-                <YAxis dataKey="name" type="category" stroke="#6b7280" width={100} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#fff',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '8px'
-                  }}
-                  formatter={(value: any) => `${value}%`}
-                />
-                <Bar dataKey="progress" fill="#10b981" />
-              </BarChart>
-            </ResponsiveContainer>
+            <div className="space-y-6">
+              {courseProgressChartData.length === 0 && (
+                <div className="text-gray-400 text-center py-8">No course progress yet. Start learning to see your progress!</div>
+              )}
+              {courseProgressChartData.map((course) => (
+                <div key={course.fullName} className="flex flex-col sm:flex-row sm:items-center gap-3">
+                  <div className="flex-1 min-w-[120px]">
+                    <span className="font-semibold text-gray-800 text-base" title={course.fullName}>{course.fullName}</span>
+                  </div>
+                  <div className="flex-1 w-full">
+                    <div className="relative h-5 bg-gray-200 rounded-full overflow-hidden shadow-inner">
+                      <div
+                        className="absolute left-0 top-0 h-5 rounded-full bg-gradient-to-r from-green-400 via-emerald-400 to-teal-500 transition-all duration-700"
+                        style={{ width: `${course.progress}%` }}
+                      ></div>
+                      <div className="absolute right-3 top-0 h-5 flex items-center text-xs font-bold text-gray-700">
+                        {Math.round(course.progress)}%
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -221,17 +511,30 @@ const AnalyticsDashboard: React.FC = () => {
         <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100 mb-12">
           <h2 className="text-xl font-bold text-gray-900 mb-6">📈 Weekly Performance</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {(weeklyStats || []).slice(-4).map((week, index) => (
-              <div key={index} className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg p-4 border border-gray-200">
-                <p className="text-sm font-medium text-gray-600">{week.week}</p>
-                <div className="mt-3 space-y-2">
-                  <p className="text-sm text-gray-700"><strong>Lessons:</strong> {week.lessonsCompleted || 0}</p>
-                  <p className="text-sm text-gray-700"><strong>Quizzes:</strong> {week.quizzesTaken || 0}</p>
-                  <p className="text-sm text-gray-700"><strong>Time:</strong> {Math.round((week.totalTimeSpent || 0) / 60)}h</p>
-                  <p className="text-sm text-blue-600 font-semibold"><strong>Avg Score:</strong> {week.averageQuizScore || 0}%</p>
+            {(() => {
+              // Always show the last 3 weeks plus the current week (if not already included)
+              const stats = weeklyStats || [];
+              // Try to get unique week labels in order
+              const uniqueWeeks = Array.from(new Set(stats.map(w => w.week)));
+              // Get the last 3 weeks
+              const last3 = uniqueWeeks.slice(-3);
+              // Always include the last (current) week
+              const currentWeek = uniqueWeeks[uniqueWeeks.length - 1];
+              const weeksToShow = last3.includes(currentWeek) ? last3 : [...last3, currentWeek];
+              // Filter stats to only those weeks
+              const filtered = stats.filter(w => weeksToShow.includes(w.week));
+              return filtered.map((week, index) => (
+                <div key={index} className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg p-4 border border-gray-200">
+                  <p className="text-sm font-medium text-gray-600">{week.week}</p>
+                  <div className="mt-3 space-y-2">
+                    <p className="text-sm text-gray-700"><strong>Lessons:</strong> {week.lessonsCompleted || 0}</p>
+                    <p className="text-sm text-gray-700"><strong>Quizzes:</strong> {week.quizzesTaken || 0}</p>
+                    <p className="text-sm text-gray-700"><strong>Time:</strong> {Math.round((week.totalTimeSpent || 0) / 60)}h</p>
+                    <p className="text-sm text-blue-600 font-semibold"><strong>Avg Score:</strong> {week.averageQuizScore || 0}%</p>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ));
+            })()}
           </div>
         </div>
 
@@ -245,11 +548,10 @@ const AnalyticsDashboard: React.FC = () => {
             {(achievements || []).map((achievement) => (
               <div
                 key={achievement.id}
-                className={`rounded-lg p-4 border-2 ${
-                  achievement.unlockedDate
-                    ? 'bg-gradient-to-br from-yellow-50 to-orange-50 border-yellow-300'
-                    : 'bg-gradient-to-br from-gray-50 to-gray-100 border-gray-300 opacity-50'
-                }`}
+                className={`rounded-lg p-4 border-2 ${achievement.unlockedDate
+                  ? 'bg-gradient-to-br from-yellow-50 to-orange-50 border-yellow-300'
+                  : 'bg-gradient-to-br from-gray-50 to-gray-100 border-gray-300 opacity-50'
+                  }`}
               >
                 <div className="text-4xl mb-2">{achievement.icon}</div>
                 <p className="font-bold text-sm text-gray-900">{achievement.name}</p>
@@ -294,7 +596,7 @@ const AnalyticsDashboard: React.FC = () => {
           {/* Right Column - Topics */}
           <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
             <h2 className="text-xl font-bold text-gray-900 mb-6">🎯 Topics & Skills</h2>
-            
+
             <div className="mb-6">
               <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center">
                 ✅ Mastered Topics
@@ -356,4 +658,3 @@ const AnalyticsDashboard: React.FC = () => {
 };
 
 export default AnalyticsDashboard;
- 

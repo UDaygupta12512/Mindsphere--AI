@@ -137,6 +137,10 @@ The Analytics Dashboard provides seven distinct analytics categories:
 - **Achievement System**: Gamified learning milestones
 - **Learning Statistics**: Time-based and topic-based analysis
 
+- **Server-side streaks**: Computes current and longest consecutive-day streaks from recent activity.
+
+- **PDF report export**: Downloadable student analytics PDF (overview, progress bars, quiz summary).
+
 ### 3. **Catalog Management**
 Pre-made courses organized by:
 - **Category**: Web Development, Data Science, Business, etc.
@@ -254,6 +258,15 @@ The analytics system provides deep insights into learning patterns:
 - Most focused topics
 - Learning consistency metrics
 
+ **Dynamic Streak Calculation (server)**
+   - Streak values are now calculated dynamically from recent daily activity (last 30 days) rather than depending only on stored user fields.
+   - The server computes both **currentStreak** (consecutive days with activity ending today) and **longestStreak** (the longest consecutive run within the window) and includes them in the analytics overview.
+   - File: `server/src/services/analyticsService.js` (helper `computeStreaksFromDaily`, applied in `getCompleteAnalytics`).
+   - How to test: complete a lesson or finish a quiz (updates `lastAccessed` / `timeSpent`), then reload the Analytics Dashboard — streak values should reflect recent activity.
+
+- **PDF Report Generation (client)**
+   - Added a downloadable PDF report that compiles the student's overview, course progress, quiz summary, and a short student analysis. The report includes progress bars and formatted sections for a parent/teacher-friendly output.
+
 ---
 
 ## 🌟 Platform Benefits
@@ -283,4 +296,8 @@ The analytics system provides deep insights into learning patterns:
 ---
 
 **Team MindSphere AI** - Transforming Education with Artificial Intelligence 🚀
+
+---
+
+
  

@@ -7,6 +7,9 @@ export interface AnalyticsOverview {
   currentStreak: number; // days
   longestStreak: number; // days
   lastActivityDate: string;
+  name?: string;
+  email?: string;
+  joinedAt?: string;
 }
 
 export interface CourseProgress {
@@ -66,4 +69,3 @@ export interface AnalyticsDashboardData {
   achievements: Achievement[];
   learningStats: LearningStats;
 }
- 

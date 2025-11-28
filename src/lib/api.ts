@@ -1,3 +1,10 @@
+// Chat API
+export const chatApi = {
+  sendMessage: (message: string) => {
+    // You may want to adjust the endpoint and payload as per your backend
+    return api.post<{ reply: string }>('/api/chat', { message });
+  },
+};
 // API client configuration
 // Use relative URL for production (Vercel), absolute URL for local development
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? '' : 'http://localhost:4000');
@@ -7,6 +14,11 @@ const TOKEN_KEY = 'ms_token';
 export const getToken = (): string | null => {
   return localStorage.getItem(TOKEN_KEY);
 };
+
+// ...existing code...
+
+// API methods
+
 
 // Set token
 export const setToken = (token: string): void => {
@@ -78,7 +90,7 @@ async function apiRequest<T>(
 // API methods
 export const api = {
   // GET request
-    get: <T>(endpoint: string): Promise<T> => { 
+  get: <T>(endpoint: string): Promise<T> => { 
     return apiRequest<T>(endpoint, { method: 'GET' });
   },
 
@@ -101,6 +113,14 @@ export const api = {
   // DELETE request
   delete: <T>(endpoint: string): Promise<T> => {
     return apiRequest<T>(endpoint, { method: 'DELETE' });
+  },
+
+  // Mark quiz as completed for a course
+  completeQuiz: (courseId: string, quizIndex: number, score: number) => {
+    return api.patch(`/api/courses/${courseId}/quizzes/${quizIndex}/complete`, {
+      score,
+      completedAt: new Date().toISOString(),
+    });
   },
 };
 
@@ -161,6 +181,13 @@ export const coursesApi = {
   }) => {
     return api.patch<CourseResponse>(`/api/courses/${id}`, data);
   },
+  // Mark quiz as completed for a course
+  completeQuiz: (courseId: string, quizIndex: number, score: number) => {
+    return api.patch(`/api/courses/${courseId}/quizzes/${quizIndex}/complete`, {
+      score,
+      completedAt: new Date().toISOString(),
+    });
+  },
 };
 
 // Catalog API
@@ -169,20 +196,31 @@ export const catalogApi = {
     return api.get<CourseResponse[]>('/api/catalog');
   },
   
-  enroll: (courseId: string) => {
-    return api.post<CourseResponse>(`/api/catalog/${courseId}/enroll`);
+  getById: (id: string) => {
+    return api.get<CourseResponse>(`/api/catalog/${id}`);
   },
-};
-
-// Chat API
-export const chatApi = {
-  sendMessage: (message: string) => {
-    return api.post<{ reply: string }>('/api/chat', { message });
+  
+  create: (data: { sourceType: string; source?: string; title?: string; catalogCourse?: Record<string, any> }) => {
+    return api.post<CourseResponse>('/api/catalog', data);
   },
-};
-
-// Health check
-export const healthCheck = () => {
-  return api.get<{ ok: boolean }>('/api/health');
+  
+  enroll: (id: string) => {
+    return api.post<CourseResponse>(`/api/catalog/${id}/enroll`);
+  },
+  
+  updateProgress: (id: string, data: {
+    progress: number;
+    completedLessons?: number;
+    lessons?: any[];
+  }) => {
+    return api.patch(`/api/catalog/${id}`, data);
+  },
+  // Mark quiz as completed for a course (if needed for catalog)
+  completeQuiz: (courseId: string, quizIndex: number, score: number) => {
+    return api.patch(`/api/catalog/${courseId}/quizzes/${quizIndex}/complete`, {
+      score,
+      completedAt: new Date().toISOString(),
+    });
+  },
 };
  

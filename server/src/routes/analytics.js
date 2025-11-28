@@ -18,23 +18,32 @@ const router = express.Router();
 router.get('/', authMiddleware, async (req, res) => {
   try {
     // Get user with populated BOTH enrolled courses (catalog) AND created courses
+    // Always fetch the latest course data for the user
     const user = await User.findById(req.userId)
       .populate({
         path: 'enrolledCourses',
-        select: 'title lessons quizzes progress completedLessons lastAccessed createdAt topics'
+        select: 'title lessons quizzes progress completedLessons lastAccessed createdAt topics scores',
+        populate: {
+          path: 'quizzes',
+          select: 'title questions completedAt score scores',
+        }
       })
       .populate({
         path: 'courses',
-        select: 'title lessons quizzes progress completedLessons lastAccessed createdAt topics'
+        select: 'title lessons quizzes progress completedLessons lastAccessed createdAt topics scores',
+        populate: {
+          path: 'quizzes',
+          select: 'title questions completedAt score scores',
+        }
       });
-    
+
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
-    
+
     // Calculate and return analytics
     const analytics = getCompleteAnalytics(user);
-    
+
     console.log('📊 Analytics calculated:', {
       totalCoursesEnrolled: analytics.overview.totalCoursesEnrolled,
       totalLessonsCompleted: analytics.overview.totalLessonsCompleted,
@@ -42,7 +51,7 @@ router.get('/', authMiddleware, async (req, res) => {
       enrolledCourses: user.enrolledCourses?.length || 0,
       createdCourses: user.courses?.length || 0
     });
-    
+
     res.json({
       success: true,
       data: analytics

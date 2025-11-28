@@ -32,17 +32,27 @@ const CourseViewer: React.FC<CourseViewerProps> = ({ course, onBack, onUpdateCou
       ...course,
       progress: newProgress
     };
-    
+
     // Update local state
     onUpdateCourse(updatedCourse);
-    
-    // Sync to backend
+
+    // 1. Update progress only
     try {
-      await coursesApi.updateProgress(course.id, {
+      await coursesApi.updateProgress(course._id, {
         progress: newProgress
       });
     } catch (error) {
-      console.error('Error updating quiz progress:', error);
+      console.error('Error updating course progress:', error);
+    }
+
+    // 2. Mark quiz as completed and store score in backend (always use correct endpoint)
+    try {
+      if (course.quizzes && course.quizzes.length > 0) {
+        console.log('Calling completeQuiz with', course._id, 0, score);
+        await coursesApi.completeQuiz(course._id, 0, score);
+      }
+    } catch (error) {
+      console.error('Error marking quiz as completed:', error);
     }
   };
 
@@ -58,7 +68,7 @@ const CourseViewer: React.FC<CourseViewerProps> = ({ course, onBack, onUpdateCou
     
     // Sync to backend
     try {
-      await coursesApi.updateProgress(course.id, {
+      await coursesApi.updateProgress(course._id, {
         progress: newProgress
       });
     } catch (error) {
@@ -86,10 +96,10 @@ const CourseViewer: React.FC<CourseViewerProps> = ({ course, onBack, onUpdateCou
     
     // Sync to backend
     try {
-      await coursesApi.updateProgress(course.id, {
+      await coursesApi.updateProgress(course._id, {
         completedLessons: completedCount,
         progress: progressPercentage,
-  lessons: updatedLessons as any
+        lessons: updatedLessons as any
       });
     } catch (error) {
       console.error('Error updating lesson progress:', error);
@@ -514,7 +524,7 @@ const CourseViewer: React.FC<CourseViewerProps> = ({ course, onBack, onUpdateCou
                 <div className="p-8">
                   <QuizComponent 
                     quizzes={course.quizzes}
-                    courseId={course.id}
+                    courseId={course._id}
                     onComplete={handleQuizComplete}
                   />
                 </div>
