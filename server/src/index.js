@@ -1,4 +1,4 @@
-import express from 'express'; 
+import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
@@ -14,6 +14,7 @@ import flashcardsRoutes from './routes/flashcards.js';
 import lessonsRoutes from './routes/lessons.js';
 import youtubeTestRoutes from './routes/youtubeTest.js';
 
+dotenv.config({ path: '../.env.production' });
 dotenv.config();
 
 const app = express();
@@ -57,8 +58,8 @@ app.use((req, res) => {
 
 app.use((err, req, res, next) => {
   console.error('Error:', err);
-  res.status(err.status || 500).json({ 
-    error: err.message || 'Internal server error' 
+  res.status(err.status || 500).json({
+    error: err.message || 'Internal server error'
   });
 });
 
@@ -66,7 +67,7 @@ const startServer = async () => {
   try {
     await connectDB();
     initializeGemini();
-    
+
     app.listen(PORT, () => {
       console.log(`\n🚀 Server listening on port ${PORT}`);
       console.log(`📡 API URL: http://localhost:${PORT}`);
@@ -79,4 +80,3 @@ const startServer = async () => {
 };
 
 startServer();
- 
