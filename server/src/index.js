@@ -16,6 +16,8 @@ import youtubeTestRoutes from './routes/youtubeTest.js';
 import achievementsRoutes from './routes/achievements.js';
 import certificatesRoutes from './routes/certificates.js';
 import pointsRoutes from './routes/points.js';
+import srsRoutes from './routes/srs.js';
+import learningRoutes from './routes/learning.js';
 
 dotenv.config({ path: '../.env.production' });
 dotenv.config();
@@ -30,8 +32,9 @@ const corsConfig = process.env.NODE_ENV === 'production'
       origin: [
         'https://mind-sphere-nine.vercel.app',
         'https://mind-sphere-cyan.vercel.app',
-        'http://localhost:5173'
-      ],
+        'http://localhost:5173',
+        process.env.FRONTEND_URL // <-- Added to support Render deployment
+      ].filter(Boolean),
       credentials: true
     }
   : {
@@ -59,6 +62,8 @@ app.use('/api/lessons', lessonsRoutes);
 app.use('/api/achievements', achievementsRoutes);
 app.use('/api/certificates', certificatesRoutes);
 app.use('/api/points', pointsRoutes);
+app.use('/api/srs', srsRoutes);
+app.use('/api/learning', learningRoutes);
 app.use('/api/test', youtubeTestRoutes);
 
 // Friendly root route for browser visits
