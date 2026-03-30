@@ -26,6 +26,8 @@ export interface Course {
   completedLessons: number;
   certificate: boolean;
   lastAccessed?: Date;
+  whatYouLearn?: string[];
+  requirements?: string[];
 }
 
 export interface Lesson {

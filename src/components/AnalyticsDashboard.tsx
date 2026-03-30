@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import jsPDF from 'jspdf';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis } from 'recharts';
 import { TrendingUp, Clock, BookOpen, Zap, Award, Flame, Activity, Target } from 'lucide-react';
 import { api } from '../lib/api';
 import { AnalyticsDashboardData } from '../types/analytics';
+import { useCountUp } from '../hooks/useCountUp';
 
 // Generate a highly visualized PDF report
 async function handleDownloadReport(analytics: AnalyticsDashboardData | null) {
@@ -374,12 +375,18 @@ const AnalyticsDashboard: React.FC<{ onNavigate?: (view: string) => void }> = ({
 
   const StatCard = ({ icon: Icon, label, value, unit = '', color = 'blue' }: any) => {
     const c = colorMap[color] || colorMap.blue;
+    const numericValue = typeof value === 'number' ? value : 0;
+    const { value: animatedValue, ref } = useCountUp({
+      end: numericValue,
+      duration: 2000,
+      suffix: unit,
+    });
     return (
-      <div className={`${c.bg} rounded-lg p-6 border ${c.border}`}>
+      <div ref={ref} className={`${c.bg} rounded-lg p-6 border ${c.border}`}>
         <div className="flex items-center justify-between">
           <div>
             <p className="text-gray-600 text-sm font-medium">{label}</p>
-            <p className="text-3xl font-bold text-gray-900 mt-2">{value}{unit}</p>
+            <p className="text-3xl font-bold text-gray-900 mt-2">{animatedValue}</p>
           </div>
           <Icon className={`h-10 w-10 ${c.text} opacity-80`} />
         </div>
@@ -546,6 +553,52 @@ const AnalyticsDashboard: React.FC<{ onNavigate?: (view: string) => void }> = ({
               ));
             })()}
           </div>
+        </div>
+
+        {/* Skill Gap Radar Chart */}
+        <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100 mb-12">
+          <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
+            <Target className="h-6 w-6 mr-3 text-indigo-600" />
+            🎯 Skill Gap Analysis
+          </h2>
+          {(() => {
+            // Build radar data from course progress — one entry per unique topic
+            const topicMap: Record<string, { total: number; count: number }> = {};
+            (courseProgress || []).forEach(cp => {
+              // Use course title words as a fallback topic
+              const topic = cp.courseTitle.split(/[:\-–]/).map(s => s.trim())[0] || cp.courseTitle;
+              if (!topicMap[topic]) topicMap[topic] = { total: 0, count: 0 };
+              topicMap[topic].total += cp.progress || 0;
+              topicMap[topic].count += 1;
+            });
+            // Also blend in mastered / in-progress topics from learningStats
+            (learningStats?.topicsMastered || []).forEach(t => {
+              if (!topicMap[t]) topicMap[t] = { total: 0, count: 0 };
+              topicMap[t].total += 100; topicMap[t].count += 1;
+            });
+            (learningStats?.topicsInProgress || []).forEach(t => {
+              if (!topicMap[t]) topicMap[t] = { total: 0, count: 0 };
+              topicMap[t].total += 50; topicMap[t].count += 1;
+            });
+            const radarData = Object.entries(topicMap).slice(0, 8).map(([topic, { total, count }]) => ({
+              topic: topic.length > 18 ? topic.slice(0, 16) + '…' : topic,
+              strength: Math.round(total / count),
+              fullMark: 100,
+            }));
+            if (radarData.length < 3) {
+              return <div className="text-gray-400 text-center py-8">Enroll in at least 3 courses to see your skill gap analysis.</div>;
+            }
+            return (
+              <ResponsiveContainer width="100%" height={380}>
+                <RadarChart data={radarData} outerRadius="75%">
+                  <PolarGrid stroke="#e5e7eb" />
+                  <PolarAngleAxis dataKey="topic" tick={{ fill: '#374151', fontSize: 12 }} />
+                  <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fill: '#9ca3af', fontSize: 10 }} />
+                  <Radar name="Strength" dataKey="strength" stroke="#6366f1" fill="#6366f1" fillOpacity={0.35} strokeWidth={2} />
+                </RadarChart>
+              </ResponsiveContainer>
+            );
+          })()}
         </div>
 
         {/* Achievements */}

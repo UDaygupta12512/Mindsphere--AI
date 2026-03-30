@@ -9,39 +9,78 @@ interface AuthModalProps {
 }
 
 const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuth }) => {
-  const [isSignUp, setIsSignUp] = useState(false);
+  const [mode, setMode] = useState<'login' | 'signup' | 'reset'>('login');
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     password: '',
-    confirmPassword: ''
+    confirmPassword: '',
+    newPassword: ''
   });
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
+  const [successMessage, setSuccessMessage] = useState('');
 
   if (!isOpen) return null;
 
   const validateForm = () => {
     const newErrors: { [key: string]: string } = {};
 
-    if (!formData.email) {
+    // Trim inputs
+    const email = formData.email.trim();
+    const name = formData.name.trim();
+
+    // Email validation
+    if (!email) {
       newErrors.email = 'Email is required';
-    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-      newErrors.email = 'Email is invalid';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      newErrors.email = 'Please enter a valid email address';
+    } else if (email.length > 100) {
+      newErrors.email = 'Email is too long';
     }
 
-    if (!formData.password) {
-      newErrors.password = 'Password is required';
-    } else if (formData.password.length < 6) {
-      newErrors.password = 'Password must be at least 6 characters';
-    }
-
-    if (isSignUp) {
-      if (!formData.name) {
-        newErrors.name = 'Name is required';
+    if (mode === 'reset') {
+      if (!formData.newPassword) {
+        newErrors.newPassword = 'New password is required';
+      } else if (formData.newPassword.length < 6) {
+        newErrors.newPassword = 'Password must be at least 6 characters';
+      } else if (formData.newPassword.length > 50) {
+        newErrors.newPassword = 'Password is too long';
+      } else if (!/(?=.*[a-zA-Z])(?=.*[0-9])/.test(formData.newPassword)) {
+        newErrors.newPassword = 'Password must contain letters and numbers';
       }
-      if (formData.password !== formData.confirmPassword) {
-        newErrors.confirmPassword = 'Passwords do not match';
+    } else {
+      if (!formData.password) {
+        newErrors.password = 'Password is required';
+      } else if (formData.password.length < 6) {
+        newErrors.password = 'Password must be at least 6 characters';
+      } else if (formData.password.length > 50) {
+        newErrors.password = 'Password is too long';
+      }
+
+      if (mode === 'signup') {
+        if (!name) {
+          newErrors.name = 'Name is required';
+        } else if (name.length < 2) {
+          newErrors.name = 'Name must be at least 2 characters';
+        } else if (name.length > 50) {
+          newErrors.name = 'Name is too long';
+        } else if (!/^[a-zA-Z\s'-]+$/.test(name)) {
+          newErrors.name = 'Name can only contain letters, spaces, hyphens, and apostrophes';
+        }
+
+        if (!formData.confirmPassword) {
+          newErrors.confirmPassword = 'Please confirm your password';
+        } else if (formData.password !== formData.confirmPassword) {
+          newErrors.confirmPassword = 'Passwords do not match';
+        }
+
+        // Password strength for signup
+        if (formData.password && formData.password.length >= 6) {
+          if (!/(?=.*[a-zA-Z])(?=.*[0-9])/.test(formData.password)) {
+            newErrors.password = 'Password must contain letters and numbers';
+          }
+        }
       }
     }
 
@@ -51,34 +90,46 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuth }) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSuccessMessage('');
 
     if (!validateForm()) return;
 
     setIsLoading(true);
 
+    // Trim inputs before submission
+    const trimmedEmail = formData.email.trim().toLowerCase();
+    const trimmedName = formData.name.trim();
+
     try {
-      let response;
-
-      if (isSignUp) {
-        response = await authApi.signup({
-          name: formData.name,
-          email: formData.email,
+      if (mode === 'reset') {
+        await authApi.resetPassword({
+          email: trimmedEmail,
+          newPassword: formData.newPassword
+        });
+        setSuccessMessage('Password reset successfully! You can now login.');
+        setFormData({ ...formData, newPassword: '' });
+        setTimeout(() => {
+          setMode('login');
+          setSuccessMessage('');
+        }, 2000);
+      } else if (mode === 'signup') {
+        const response = await authApi.signup({
+          name: trimmedName,
+          email: trimmedEmail,
           password: formData.password
         });
+        setToken(response.token);
+        onAuth(response.user);
+        onClose();
       } else {
-        response = await authApi.login({
-          email: formData.email,
+        const response = await authApi.login({
+          email: trimmedEmail,
           password: formData.password
         });
+        setToken(response.token);
+        onAuth(response.user);
+        onClose();
       }
-
-      // Store token
-      setToken(response.token);
-
-      // Call onAuth with user data
-      onAuth(response.user);
-
-      onClose();
     } catch (error) {
       console.error('Auth error:', error);
       const errorMsg = error instanceof Error ? error.message : 'Authentication failed. Please try again.';
@@ -96,6 +147,13 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuth }) => {
     }
   };
 
+  const switchMode = (newMode: 'login' | 'signup' | 'reset') => {
+    setMode(newMode);
+    setFormData({ name: '', email: formData.email, password: '', confirmPassword: '', newPassword: '' });
+    setErrors({});
+    setSuccessMessage('');
+  };
+
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden">
@@ -109,7 +167,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuth }) => {
             <span className="sr-only">Close</span>
           </button>
           <h2 className="text-2xl font-bold">
-            {isSignUp ? 'Sign Up' : 'Login'}
+            {mode === 'signup' ? 'Sign Up' : mode === 'reset' ? 'Reset Password' : 'Login'}
           </h2>
         </div>
 
@@ -120,8 +178,13 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuth }) => {
               <p className="text-red-600 text-sm">{errors.general}</p>
             </div>
           )}
+          {successMessage && (
+            <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+              <p className="text-green-600 text-sm">{successMessage}</p>
+            </div>
+          )}
           <form onSubmit={handleSubmit} className="space-y-4">
-            {isSignUp && (
+            {mode === 'signup' && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Full Name
@@ -153,22 +216,41 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuth }) => {
               {errors.email && <p className="text-red-500 text-sm mt-1">{errors.email}</p>}
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Password
-              </label>
-              <input
-                type="password"
-                name="password"
-                value={formData.password}
-                onChange={handleInputChange}
-                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                placeholder="Enter your password"
-              />
-              {errors.password && <p className="text-red-500 text-sm mt-1">{errors.password}</p>}
-            </div>
+            {mode !== 'reset' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Password
+                </label>
+                <input
+                  type="password"
+                  name="password"
+                  value={formData.password}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                  placeholder="Enter your password"
+                />
+                {errors.password && <p className="text-red-500 text-sm mt-1">{errors.password}</p>}
+              </div>
+            )}
 
-            {isSignUp && (
+            {mode === 'reset' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  New Password
+                </label>
+                <input
+                  type="password"
+                  name="newPassword"
+                  value={formData.newPassword}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                  placeholder="Enter your new password"
+                />
+                {errors.newPassword && <p className="text-red-500 text-sm mt-1">{errors.newPassword}</p>}
+              </div>
+            )}
+
+            {mode === 'signup' && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Confirm Password
@@ -190,22 +272,26 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuth }) => {
               disabled={isLoading}
               className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition"
             >
-              {isLoading ? 'Processing...' : isSignUp ? 'Sign Up' : 'Login'}
+              {isLoading ? 'Processing...' : mode === 'signup' ? 'Sign Up' : mode === 'reset' ? 'Reset Password' : 'Login'}
             </button>
           </form>
 
-          <div className="mt-4 text-center">
-            <p className="text-sm">
-              {isSignUp ? 'Already have an account?' : "Don't have an account?"}{' '}
+          <div className="mt-4 text-center space-y-2">
+            {mode === 'login' && (
               <button
-                onClick={() => {
-                  setIsSignUp(!isSignUp);
-                  setFormData({ name: '', email: '', password: '', confirmPassword: '' });
-                  setErrors({});
-                }}
+                onClick={() => switchMode('reset')}
+                className="text-sm text-gray-500 hover:text-blue-600 hover:underline"
+              >
+                Forgot Password?
+              </button>
+            )}
+            <p className="text-sm">
+              {mode === 'signup' ? 'Already have an account?' : mode === 'reset' ? 'Remember your password?' : "Don't have an account?"}{' '}
+              <button
+                onClick={() => switchMode(mode === 'signup' ? 'login' : mode === 'reset' ? 'login' : 'signup')}
                 className="text-blue-600 hover:underline"
               >
-                {isSignUp ? 'Login' : 'Sign Up'}
+                {mode === 'signup' ? 'Login' : mode === 'reset' ? 'Login' : 'Sign Up'}
               </button>
             </p>
           </div>

@@ -23,18 +23,19 @@ router.post('/signup', async (req, res) => {
       });
     }
     
-    // Check if user already exists
-    const existingUser = await User.findOne({ email });
+    // Check if user already exists (normalize email for comparison)
+    const normalizedEmail = email.toLowerCase().trim();
+    const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) {
       return res.status(400).json({ 
         error: 'User with this email already exists' 
       });
     }
     
-    // Create new user
+    // Create new user (use normalized email)
     const user = new User({
       name,
-      email,
+      email: normalizedEmail,
       password
     });
     
@@ -66,27 +67,28 @@ router.post('/signup', async (req, res) => {
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
-    
+
     // Validate input
     if (!email || !password) {
-      return res.status(400).json({ 
-        error: 'Please provide email and password' 
+      return res.status(400).json({
+        error: 'Please provide email and password'
       });
     }
-    
-    // Find user by email
-    const user = await User.findOne({ email });
+
+    // Find user by email (convert to lowercase to match stored format)
+    const normalizedEmail = email.toLowerCase().trim();
+    const user = await User.findOne({ email: normalizedEmail });
     if (!user) {
-      return res.status(401).json({ 
-        error: 'Invalid email or password' 
+      return res.status(401).json({
+        error: 'Invalid email or password'
       });
     }
-    
+
     // Check password
     const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
-      return res.status(401).json({ 
-        error: 'Invalid email or password' 
+      return res.status(401).json({
+        error: 'Invalid email or password'
       });
     }
     
@@ -128,6 +130,49 @@ router.post('/login', async (req, res) => {
   }
 });
 
+
+// POST /api/auth/reset-password - Reset password (for development/testing)
+router.post('/reset-password', async (req, res) => {
+  try {
+    const { email, newPassword } = req.body;
+
+    if (!email || !newPassword) {
+      return res.status(400).json({
+        error: 'Please provide email and new password'
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        error: 'Password must be at least 6 characters'
+      });
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+    const user = await User.findOne({ email: normalizedEmail });
+
+    if (!user) {
+      return res.status(404).json({
+        error: 'No account found with this email'
+      });
+    }
+
+    // Update password (the pre-save hook will hash it)
+    user.password = newPassword;
+    await user.save();
+
+    console.log('✅ Password reset for:', normalizedEmail);
+
+    res.json({
+      message: 'Password reset successfully. You can now login with your new password.'
+    });
+  } catch (error) {
+    console.error('Password reset error:', error);
+    res.status(500).json({
+      error: 'Failed to reset password. Please try again.'
+    });
+  }
+});
 
 // GET /api/auth/me - Get current user profile
 import { authMiddleware } from '../middleware/auth.js';

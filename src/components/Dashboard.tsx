@@ -1,17 +1,99 @@
 import React from 'react';
-import { Play, FileText, Clock, TrendingUp, Award, BookOpen, Target } from 'lucide-react';
+import { Play, FileText, Clock, TrendingUp, Award, BookOpen, Target, ChevronRight, Brain } from 'lucide-react';
 import { Course } from '../types/course';
+import StudyTimer from './StudyTimer';
+import LearningGoals from './LearningGoals';
+import LearningStreak from './LearningStreak';
+import WelcomeBanner from './WelcomeBanner';
+import LearningPersonaCard from './LearningPersonaCard';
+import CourseRecommender from './CourseRecommender';
+import { useCountUp } from '../hooks/useCountUp';
+import { srsApi } from '../lib/api';
 
 interface DashboardProps {
   courses: Course[];
   onSelectCourse: (course: Course) => void;
   onCreateCourse: () => void;
+  userName?: string;
+  currentStreak?: number;
+  longestStreak?: number;
+  onReviewClick?: () => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ courses, onSelectCourse, onCreateCourse }) => {
+// Animated Stat Card Component
+interface StatCardProps {
+  stat: {
+    label: string;
+    value: number | string;
+    icon: React.ReactElement;
+    color: string;
+  };
+}
+
+const StatCard: React.FC<StatCardProps> = ({ stat }) => {
+  // Parse numeric values for animation
+  const getNumericValue = (value: number | string): { num: number; suffix: string } => {
+    if (typeof value === 'number') return { num: value, suffix: '' };
+    const match = value.match(/^(\d+)(.*)$/);
+    if (match) return { num: parseInt(match[1]), suffix: match[2] };
+    return { num: 0, suffix: String(value) };
+  };
+
+	const { num, suffix } = getNumericValue(stat.value);
+	const { displayValue, ref } = useCountUp({
+	  end: num,
+	  duration: 2000,
+	  suffix: suffix,
+	});
+
+  return (
+    <div ref={ref} className="bg-white rounded-2xl p-6 shadow-lg border border-gray-100 hover:shadow-xl transition-all">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-medium text-gray-600 mb-1">{stat.label}</p>
+          <p className="text-3xl font-bold text-gray-900">{displayValue}</p>
+        </div>
+        <div className={`p-3 rounded-lg ${stat.color}`}>
+          {React.cloneElement(stat.icon, { className: 'h-6 w-6 text-white' })}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const Dashboard: React.FC<DashboardProps> = ({
+  courses,
+  onSelectCourse,
+  onCreateCourse,
+  userName = 'Learner',
+  currentStreak = 0,
+  longestStreak = 0,
+  onReviewClick
+}) => {
   const totalCourses = courses.length;
   const completedCourses = courses.filter(c => c.progress === 100).length;
-  
+  const [srsStats, setSrsStats] = React.useState<{
+    total: number;
+    dueNow: number;
+    dueTomorrow: number;
+    atRisk: number;
+    needsReview: number;
+    mastered: number;
+  } | null>(null);
+
+  // Load SRS stats on mount
+  React.useEffect(() => {
+    const loadSrsStats = async () => {
+      try {
+        const response = await srsApi.getStats();
+        setSrsStats(response.stats);
+      } catch (error) {
+        console.error('Error loading SRS stats:', error);
+      }
+    };
+    loadSrsStats();
+  }, []);
+
   // Robust duration parsing that handles various formats
   const parseDurationMinutes = (duration: string): number => {
     if (!duration) return 0;
@@ -28,7 +110,7 @@ const Dashboard: React.FC<DashboardProps> = ({ courses, onSelectCourse, onCreate
     }
     return total;
   };
-  
+
   const totalMinutes = courses.reduce((acc, course) => {
     return acc + parseDurationMinutes(course.duration);
   }, 0);
@@ -63,73 +145,182 @@ const Dashboard: React.FC<DashboardProps> = ({ courses, onSelectCourse, onCreate
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        {/* Welcome Banner */}
         <div className="mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">Learning Dashboard</h1>
-          <p className="text-xl text-gray-600">Track your progress and continue learning</p>
+          <WelcomeBanner
+            userName={userName}
+            coursesInProgress={courses.filter(c => c.progress > 0 && c.progress < 100).length}
+            currentStreak={currentStreak}
+          />
         </div>
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           {stats.map((stat, index) => (
-            <div key={index} className="bg-white rounded-2xl p-6 shadow-lg border border-gray-100">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600 mb-1">{stat.label}</p>
-                  <p className="text-3xl font-bold text-gray-900">{stat.value}</p>
-                </div>
-                <div className={`p-3 rounded-lg ${stat.color}`}>
-                  {React.cloneElement(stat.icon, { className: 'h-6 w-6 text-white' })}
-                </div>
-              </div>
-            </div>
+            <StatCard key={index} stat={stat} />
           ))}
         </div>
 
-        {/* Recent Activity */}
-        <div className="mb-12">
-          <h2 className="text-2xl font-bold text-gray-900 mb-6">Recent Activity</h2>
-          <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-            {courses.length > 0 ? (
-              <div className="space-y-4">
-                {courses.slice(0, 3).map((course) => (
-                    <div key={course._id || course.id} className="flex items-center space-x-4 p-4 hover:bg-gray-50 rounded-lg transition-colors">
-                    <div className={`p-2 rounded-lg ${course.sourceType === 'youtube' ? 'bg-red-100' : 'bg-blue-100'}`}>
-                      {course.sourceType === 'youtube' ? (
-                        <Play className="h-5 w-5 text-red-600" />
-                      ) : (
-                        <FileText className="h-5 w-5 text-blue-600" />
+        {/* Main Content Grid - Sidebar with Timer, Goals, Streak */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-12">
+          {/* Main Content - Recent Activity & Courses */}
+          <div className="lg:col-span-2 space-y-8">
+            {/* Active Recall Review Card */}
+            {srsStats && srsStats.dueNow > 0 && (
+              <div
+                onClick={onReviewClick}
+                className="bg-gradient-to-br from-purple-500 to-blue-600 rounded-2xl p-6 shadow-2xl cursor-pointer hover:shadow-3xl transition-all transform hover:scale-105 text-white"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="flex items-center space-x-2 mb-2">
+                      <Brain className="h-6 w-6" />
+                      <h3 className="text-2xl font-bold">Active Recall Review</h3>
+                    </div>
+                    <p className="text-blue-100 mb-4">
+                      You have {srsStats.dueNow} concept{srsStats.dueNow > 1 ? 's' : ''} ready for review
+                    </p>
+                    <div className="grid grid-cols-3 gap-3 mb-4">
+                      {srsStats.atRisk > 0 && (
+                        <div className="bg-white/20 rounded-lg p-3 backdrop-blur">
+                          <div className="text-2xl font-bold">{srsStats.atRisk}</div>
+                          <div className="text-xs opacity-90">At Risk</div>
+                        </div>
+                      )}
+                      {srsStats.needsReview > 0 && (
+                        <div className="bg-white/20 rounded-lg p-3 backdrop-blur">
+                          <div className="text-2xl font-bold">{srsStats.needsReview}</div>
+                          <div className="text-xs opacity-90">Need Review</div>
+                        </div>
+                      )}
+                      {srsStats.mastered > 0 && (
+                        <div className="bg-white/20 rounded-lg p-3 backdrop-blur">
+                          <div className="text-2xl font-bold">{srsStats.mastered}</div>
+                          <div className="text-xs opacity-90">Mastered</div>
+                        </div>
                       )}
                     </div>
-                    <div className="flex-1">
-                      <h3 className="font-semibold text-gray-900">{course.title}</h3>
-                      <p className="text-sm text-gray-600">Created {new Date(course.createdAt).toLocaleDateString()}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-medium text-gray-900">{course.progress}% Complete</p>
-                      <div className="w-24 bg-gray-200 rounded-full h-2 mt-1">
-                        <div 
-                          className="bg-blue-600 h-2 rounded-full transition-all"
-                          style={{ width: `${course.progress}%` }}
-                        ></div>
-                      </div>
-                    </div>
+                    <button className="bg-white text-purple-600 px-6 py-3 rounded-lg font-semibold hover:bg-blue-50 transition-colors flex items-center space-x-2">
+                      <span>Review Now</span>
+                      <ChevronRight className="h-5 w-5" />
+                    </button>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-12">
-                <Target className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold text-gray-900 mb-2">No courses yet</h3>
-                <p className="text-gray-600 mb-6">Start your learning journey by creating your first course</p>
-                <button
-                  aria-label="Create First Course"
-                  onClick={onCreateCourse}
-                  className="bg-gradient-to-r from-blue-600 to-purple-600 text-white px-6 py-3 rounded-lg font-semibold hover:from-blue-700 hover:to-purple-700 transition-all"
-                >
-                  Create First Course
-                </button>
+                  <Brain className="h-32 w-32 opacity-20" />
+                </div>
               </div>
             )}
+
+            {/* Continue Learning */}
+            {courses.filter(c => c.progress > 0 && c.progress < 100).length > 0 && (
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                  <Play className="h-6 w-6 text-blue-500" />
+                  Continue Learning
+                </h2>
+                <div className="grid gap-4">
+                  {courses
+                    .filter(c => c.progress > 0 && c.progress < 100)
+                    .slice(0, 2)
+                    .map((course) => (
+                      <div
+                        key={course._id || course.id}
+                        onClick={() => onSelectCourse(course)}
+                        className="bg-white rounded-xl shadow-lg border border-gray-100 p-4 hover:shadow-xl transition-all cursor-pointer group"
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className={`p-3 rounded-lg ${course.sourceType === 'youtube' ? 'bg-red-100' : 'bg-blue-100'}`}>
+                            {course.sourceType === 'youtube' ? (
+                              <Play className="h-6 w-6 text-red-600" />
+                            ) : (
+                              <FileText className="h-6 w-6 text-blue-600" />
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-semibold text-gray-900 truncate">{course.title}</h3>
+                            <div className="flex items-center gap-2 mt-1">
+                              <div className="flex-1 bg-gray-200 rounded-full h-2">
+                                <div
+                                  className="bg-gradient-to-r from-blue-600 to-purple-600 h-2 rounded-full transition-all"
+                                  style={{ width: `${course.progress}%` }}
+                                />
+                              </div>
+                              <span className="text-sm font-medium text-gray-600">{course.progress}%</span>
+                            </div>
+                          </div>
+                          <ChevronRight className="h-5 w-5 text-gray-400 group-hover:text-blue-500 transition-colors" />
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            {/* Recent Activity */}
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900 mb-4">Recent Activity</h2>
+              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+                {courses.length > 0 ? (
+                  <div className="space-y-4">
+                    {courses.slice(0, 3).map((course) => (
+                        <div key={course._id || course.id} className="flex items-center space-x-4 p-4 hover:bg-gray-50 rounded-lg transition-colors cursor-pointer" onClick={() => onSelectCourse(course)}>
+                        <div className={`p-2 rounded-lg ${course.sourceType === 'youtube' ? 'bg-red-100' : 'bg-blue-100'}`}>
+                          {course.sourceType === 'youtube' ? (
+                            <Play className="h-5 w-5 text-red-600" />
+                          ) : (
+                            <FileText className="h-5 w-5 text-blue-600" />
+                          )}
+                        </div>
+                        <div className="flex-1">
+                          <h3 className="font-semibold text-gray-900">{course.title}</h3>
+                          <p className="text-sm text-gray-600">Created {new Date(course.createdAt).toLocaleDateString()}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-medium text-gray-900">{course.progress}% Complete</p>
+                          <div className="w-24 bg-gray-200 rounded-full h-2 mt-1">
+                            <div
+                              className="bg-blue-600 h-2 rounded-full transition-all"
+                              style={{ width: `${course.progress}%` }}
+                            ></div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-12">
+                    <Target className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+                    <h3 className="text-xl font-semibold text-gray-900 mb-2">No courses yet</h3>
+                    <p className="text-gray-600 mb-6">Start your learning journey by creating your first course</p>
+                    <button
+                      aria-label="Create First Course"
+                      onClick={onCreateCourse}
+                      className="bg-gradient-to-r from-blue-600 to-purple-600 text-white px-6 py-3 rounded-lg font-semibold hover:from-blue-700 hover:to-purple-700 transition-all"
+                    >
+                      Create First Course
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* AI Course Recommender */}
+            {courses.length > 0 && (
+              <div>
+                <CourseRecommender onCreateCourse={onCreateCourse} />
+              </div>
+            )}
+          </div>
+
+          {/* Sidebar - Study Tools */}
+          <div className="space-y-6">
+            {/* Learning Persona Card */}
+            <LearningPersonaCard compact />
+            <LearningStreak
+              currentStreak={currentStreak}
+              longestStreak={longestStreak}
+            />
+            <StudyTimer />
+            <LearningGoals userName={userName} />
           </div>
         </div>
 

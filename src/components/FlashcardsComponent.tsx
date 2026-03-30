@@ -1,17 +1,20 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { RotateCcw, CheckCircle, XCircle, Trophy, ArrowLeft, ArrowRight } from 'lucide-react';
 import { Flashcard } from '../types/course';
+import { srsApi, learningApi } from '../lib/api';
 
 interface FlashcardsComponentProps {
   flashcards: Flashcard[];
   onComplete: () => void;
+  courseId?: string;
 }
 
-const FlashcardsComponent: React.FC<FlashcardsComponentProps> = ({ flashcards, onComplete }) => {
+const FlashcardsComponent: React.FC<FlashcardsComponentProps> = ({ flashcards, onComplete, courseId }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
   const [reviewedCards, setReviewedCards] = useState<{[key: string]: 'easy' | 'hard'}>({});
   const [sessionComplete, setSessionComplete] = useState(false);
+  const sessionStartTime = useRef(new Date().toISOString());
 
   const currentCard = flashcards[currentIndex];
 
@@ -29,16 +32,51 @@ const FlashcardsComponent: React.FC<FlashcardsComponentProps> = ({ flashcards, o
     setIsFlipped(!isFlipped);
   };
 
-  const handleReview = (difficulty: 'easy' | 'hard') => {
+  const handleReview = async (difficulty: 'easy' | 'hard') => {
     const cardId = currentCard.id || `card-${currentIndex}`;
     setReviewedCards({ ...reviewedCards, [cardId]: difficulty });
-    
+
+    // Track in SRS system if courseId is available
+    if (courseId) {
+      try {
+        await srsApi.track({
+          courseId,
+          itemType: 'flashcard',
+          itemId: String(currentIndex),
+          question: currentCard.front,
+          answer: currentCard.back,
+          isCorrect: difficulty === 'easy',
+        });
+      } catch (error) {
+        console.error('Error tracking flashcard in SRS:', error);
+      }
+    }
+
     if (currentIndex < flashcards.length - 1) {
       setCurrentIndex(currentIndex + 1);
       setIsFlipped(false);
     } else {
       setSessionComplete(true);
       onComplete();
+
+      // Track session for persona analysis
+      if (courseId) {
+        const easyCount = Object.values(reviewedCards).filter(d => d === 'easy').length + (difficulty === 'easy' ? 1 : 0);
+        const totalReviewed = Object.keys(reviewedCards).length + 1;
+        const performance = Math.round((easyCount / totalReviewed) * 100);
+
+        try {
+          await learningApi.trackSession({
+            startTime: sessionStartTime.current,
+            endTime: new Date().toISOString(),
+            activityType: 'flashcard',
+            performance,
+            courseId
+          });
+        } catch (error) {
+          console.error('Error tracking flashcard session:', error);
+        }
+      }
     }
   };
 
@@ -61,6 +99,7 @@ const FlashcardsComponent: React.FC<FlashcardsComponentProps> = ({ flashcards, o
     setIsFlipped(false);
     setReviewedCards({});
     setSessionComplete(false);
+    sessionStartTime.current = new Date().toISOString();
   };
 
   if (sessionComplete) {

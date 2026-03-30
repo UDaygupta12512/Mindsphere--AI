@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { CheckCircle, XCircle, RefreshCw, Award, Brain, Zap } from 'lucide-react';
+import { CheckCircle, XCircle, RefreshCw, Award, Brain, Zap, FileText, Loader2 } from 'lucide-react';
 import { Quiz } from '../types/course';
-import { api } from '../lib/api';
+import { api, srsApi, learningApi, GapReport } from '../lib/api';
+import GapReportModal from './GapReportModal';
 
 interface QuizComponentProps {
   quizzes: Quiz[];
@@ -18,6 +19,13 @@ const QuizComponent: React.FC<QuizComponentProps> = ({ quizzes, onComplete, cour
   const [answers, setAnswers] = useState<{[key: string]: string}>({});
   const [quizCompleted, setQuizCompleted] = useState(false);
   const [isGeneratingQuestions, setIsGeneratingQuestions] = useState(false);
+  // Gap Report state
+  const [gapReport, setGapReport] = useState<GapReport | null>(null);
+  const [showGapReport, setShowGapReport] = useState(false);
+  const [isGeneratingGapReport, setIsGeneratingGapReport] = useState(false);
+  const [finalScore, setFinalScore] = useState(0);
+  const [correctCount, setCorrectCount] = useState(0);
+  const [wrongCount, setWrongCount] = useState(0);
 
   const currentQuiz = quizzes && quizzes.length > 0 ? quizzes[currentQuizIndex] : null;
   const currentQuestion = currentQuiz && currentQuiz.questions && currentQuiz.questions.length > 0 ? currentQuiz.questions[currentQuestionIndex] : null;
@@ -65,18 +73,45 @@ const QuizComponent: React.FC<QuizComponentProps> = ({ quizzes, onComplete, cour
   };
 
   const handleAnswerSelect = (answer: string) => {
-    setSelectedAnswer(answer);
-  };
-
-  const handleNext = () => {
-    if (selectedAnswer) {
-      const questionId = `${currentQuizIndex}-${currentQuestionIndex}`;
-      setAnswers(prev => ({ ...prev, [questionId]: selectedAnswer }));
-      setShowResult(true);
+    if (!showResult) {
+      setSelectedAnswer(answer);
     }
   };
 
-  const handleContinue = () => {
+  const handleNext = async () => {
+    if (!selectedAnswer || !selectedAnswer.trim()) {
+      alert('Please select an answer before continuing');
+      return;
+    }
+
+    const questionId = `${currentQuizIndex}-${currentQuestionIndex}`;
+    setAnswers(prev => ({ ...prev, [questionId]: selectedAnswer }));
+    setShowResult(true);
+
+    // Track in SRS if wrong answer
+    if (courseId && currentQuestion) {
+      const userLetter = extractLetter(selectedAnswer, currentQuestion.options);
+      const correctLetter = extractLetter(currentQuestion.correctAnswer, currentQuestion.options);
+      const isCorrect = userLetter === correctLetter && userLetter !== '';
+
+      if (!isCorrect) {
+        try {
+          await srsApi.track({
+            courseId,
+            itemType: 'quiz',
+            itemId: `${currentQuizIndex}-${currentQuestionIndex}`,
+            question: currentQuestion.question,
+            answer: currentQuestion.correctAnswer,
+            isCorrect: false,
+          });
+        } catch (error) {
+          console.error('Error tracking quiz question in SRS:', error);
+        }
+      }
+    }
+  };
+
+  const handleContinue = async () => {
     // Store current answer before moving on (ensures last question is counted)
     const questionId = `${currentQuizIndex}-${currentQuestionIndex}`;
     const updatedAnswers = { ...answers, [questionId]: selectedAnswer };
@@ -91,17 +126,68 @@ const QuizComponent: React.FC<QuizComponentProps> = ({ quizzes, onComplete, cour
       // Quiz completed - calculate score from all stored answers including this one
       const totalQuestions = currentQuiz.questions.length;
       let correctAnswers = 0;
+      const quizResults: Array<{
+        question: string;
+        userAnswer: string;
+        correctAnswer: string;
+        isCorrect: boolean;
+      }> = [];
+
       for (let i = 0; i < totalQuestions; i++) {
         const qId = `${currentQuizIndex}-${i}`;
         const userAnswer = updatedAnswers[qId];
         const question = currentQuiz.questions[i];
         const userLetter = extractLetter(userAnswer, question.options);
         const correctLetter = extractLetter(question.correctAnswer, question.options);
-        if (userLetter === correctLetter && userLetter !== '') correctAnswers++;
+        const isCorrect = userLetter === correctLetter && userLetter !== '';
+        if (isCorrect) correctAnswers++;
+
+        quizResults.push({
+          question: question.question,
+          userAnswer: userAnswer || '',
+          correctAnswer: question.correctAnswer,
+          isCorrect
+        });
       }
+
       const score = Math.round((correctAnswers / totalQuestions) * 100);
+      setFinalScore(score);
+      setCorrectCount(correctAnswers);
+      setWrongCount(totalQuestions - correctAnswers);
       setQuizCompleted(true);
       onComplete(score);
+
+      // Generate Gap Report if there are wrong answers
+      if (courseId && totalQuestions - correctAnswers > 0) {
+        setIsGeneratingGapReport(true);
+        try {
+          const response = await learningApi.generateGapReport({
+            courseId,
+            score,
+            quizResults
+          });
+          setGapReport(response.gapReport);
+        } catch (error) {
+          console.error('Error generating gap report:', error);
+        } finally {
+          setIsGeneratingGapReport(false);
+        }
+      }
+
+      // Track study session for persona
+      if (courseId) {
+        try {
+          await learningApi.trackSession({
+            startTime: new Date(Date.now() - totalQuestions * 30000).toISOString(), // Estimate start time
+            endTime: new Date().toISOString(),
+            activityType: 'quiz',
+            performance: score,
+            courseId
+          });
+        } catch (error) {
+          console.error('Error tracking session:', error);
+        }
+      }
     }
   };
 
@@ -111,6 +197,11 @@ const QuizComponent: React.FC<QuizComponentProps> = ({ quizzes, onComplete, cour
     setShowResult(false);
     setAnswers({});
     setQuizCompleted(false);
+    setGapReport(null);
+    setShowGapReport(false);
+    setFinalScore(0);
+    setCorrectCount(0);
+    setWrongCount(0);
   };
 
   const handleGenerateMoreQuestions = async () => {
@@ -163,28 +254,27 @@ const QuizComponent: React.FC<QuizComponentProps> = ({ quizzes, onComplete, cour
   const isCorrect = selectedAnswerLetter === correctAnswerLetter && selectedAnswerLetter !== '';
   
   const getExplanation = () => {
-    if (!currentQuestion) return '';
-    if (currentQuestion.correctExplanation) return currentQuestion.correctExplanation;
-    return currentQuestion.explanation || '';
+    if (!currentQuestion) return 'No explanation available.';
+
+    // Try different explanation formats
+    if (currentQuestion.correctExplanation && currentQuestion.correctExplanation.trim()) {
+      return currentQuestion.correctExplanation;
+    }
+
+    if (currentQuestion.explanation && currentQuestion.explanation.trim()) {
+      return currentQuestion.explanation;
+    }
+
+    // Fallback explanation
+    return `The correct answer is: ${currentQuestion.correctAnswer}`;
   };
 
   if (quizCompleted) {
     const totalQuestions = currentQuiz.questions.length;
-    
-    // Count correct from all stored answers
-    const correctAnswers = Object.keys(answers).filter(questionId => {
-      const questionIndex = parseInt(questionId.split('-')[1]);
-      const storedAnswer = answers[questionId];
-      const question = currentQuiz.questions[questionIndex];
-      if (!question) return false;
-      
-      const storedLetter = extractLetter(storedAnswer, question.options);
-      const correctLetter = extractLetter(question.correctAnswer, question.options);
-      
-      return storedLetter === correctLetter && storedLetter !== '';
-    }).length;
-    
-    const score = Math.round((correctAnswers / totalQuestions) * 100);
+
+    // Use stored values
+    const score = finalScore;
+    const correctAnswers = correctCount;
 
     return (
       <div className="text-center py-12">
@@ -192,7 +282,7 @@ const QuizComponent: React.FC<QuizComponentProps> = ({ quizzes, onComplete, cour
           <Award className="h-16 w-16 text-yellow-500 mx-auto mb-4" />
           <h3 className="text-2xl font-bold text-gray-900 mb-2">Quiz Completed!</h3>
           <p className="text-gray-600 mb-6">You've finished the {currentQuiz.title}</p>
-          
+
           <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-2xl p-6 max-w-sm mx-auto">
             <div className="text-4xl font-bold text-gray-900 mb-2">{score}%</div>
             <div className="text-gray-600">
@@ -200,7 +290,34 @@ const QuizComponent: React.FC<QuizComponentProps> = ({ quizzes, onComplete, cour
             </div>
           </div>
         </div>
-        
+
+        {/* Gap Report Section */}
+        {wrongCount > 0 && (
+          <div className="mb-8 max-w-md mx-auto">
+            {isGeneratingGapReport ? (
+              <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl p-4 border border-purple-200">
+                <div className="flex items-center justify-center gap-3">
+                  <Loader2 className="h-5 w-5 text-purple-600 animate-spin" />
+                  <span className="text-purple-700 font-medium">Analyzing your answers...</span>
+                </div>
+              </div>
+            ) : gapReport ? (
+              <button
+                onClick={() => setShowGapReport(true)}
+                className="w-full bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl p-4 hover:opacity-90 transition-opacity shadow-lg"
+              >
+                <div className="flex items-center justify-center gap-2">
+                  <FileText className="h-5 w-5" />
+                  <span className="font-semibold">View Gap Analysis Report</span>
+                </div>
+                <p className="text-sm text-white/80 mt-1">
+                  AI-generated insights and mini-lessons for improvement
+                </p>
+              </button>
+            ) : null}
+          </div>
+        )}
+
         <div className="flex gap-4 justify-center mt-8">
           <button
             onClick={handleRestart}
@@ -219,6 +336,19 @@ const QuizComponent: React.FC<QuizComponentProps> = ({ quizzes, onComplete, cour
             <span>{isGeneratingQuestions ? 'Generating...' : 'Generate More Questions'}</span>
           </button>
         </div>
+
+        {/* Gap Report Modal */}
+        {gapReport && (
+          <GapReportModal
+            isOpen={showGapReport}
+            onClose={() => setShowGapReport(false)}
+            gapReport={gapReport}
+            score={score}
+            totalQuestions={totalQuestions}
+            correctCount={correctAnswers}
+            wrongCount={wrongCount}
+          />
+        )}
       </div>
     );
   }

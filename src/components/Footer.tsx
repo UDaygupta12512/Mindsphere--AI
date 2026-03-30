@@ -1,7 +1,11 @@
 import React from 'react';
 import { GraduationCap, Twitter, Github, Linkedin, Mail, Heart } from 'lucide-react';
 
-const Footer = () => {
+interface FooterProps {
+    onNavigate: (view: string) => void;
+}
+
+const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
     return (
         <footer className="bg-[#0f172a] text-gray-300 pt-20 pb-10">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -35,30 +39,30 @@ const Footer = () => {
                     <div>
                         <h3 className="text-white font-bold text-lg mb-6">Product</h3>
                         <ul className="space-y-4">
-                            <li><a href="#" className="hover:text-white transition-colors">Features</a></li>
-                            <li><a href="#" className="hover:text-white transition-colors">How it Works</a></li>
-                            <li><a href="#" className="hover:text-white transition-colors">Pricing</a></li>
-                            <li><a href="#" className="hover:text-white transition-colors">API</a></li>
+                            <li><button onClick={() => onNavigate('home')} className="hover:text-white transition-colors">Features</button></li>
+                            <li><button onClick={() => onNavigate('home')} className="hover:text-white transition-colors">How it Works</button></li>
+                            <li><button onClick={() => onNavigate('catalog')} className="hover:text-white transition-colors">Browse Courses</button></li>
+                            <li><button onClick={() => onNavigate('create')} className="hover:text-white transition-colors">Create Course</button></li>
                         </ul>
                     </div>
 
                     <div>
-                        <h3 className="text-white font-bold text-lg mb-6">Company</h3>
+                        <h3 className="text-white font-bold text-lg mb-6">Learning</h3>
                         <ul className="space-y-4">
-                            <li><a href="#" className="hover:text-white transition-colors">About Us</a></li>
-                            <li><a href="#" className="hover:text-white transition-colors">Blog</a></li>
-                            <li><a href="#" className="hover:text-white transition-colors">Careers</a></li>
-                            <li><a href="#" className="hover:text-white transition-colors">Contact</a></li>
+                            <li><button onClick={() => onNavigate('dashboard')} className="hover:text-white transition-colors">My Dashboard</button></li>
+                            <li><button onClick={() => onNavigate('chatbot')} className="hover:text-white transition-colors">AI Tutor</button></li>
+                            <li><button onClick={() => onNavigate('analytics')} className="hover:text-white transition-colors">Analytics</button></li>
+                            <li><button onClick={() => onNavigate('catalog')} className="hover:text-white transition-colors">Course Catalog</button></li>
                         </ul>
                     </div>
 
                     <div>
                         <h3 className="text-white font-bold text-lg mb-6">Support</h3>
                         <ul className="space-y-4">
-                            <li><a href="#" className="hover:text-white transition-colors">Help Center</a></li>
-                            <li><a href="#" className="hover:text-white transition-colors">Community</a></li>
-                            <li><a href="#" className="hover:text-white transition-colors">Status</a></li>
-                            <li><a href="#" className="hover:text-white transition-colors">Terms of Service</a></li>
+                            <li><button onClick={() => onNavigate('home')} className="hover:text-white transition-colors">Help Center</button></li>
+                            <li><button onClick={() => onNavigate('home')} className="hover:text-white transition-colors">Community</button></li>
+                            <li><button onClick={() => onNavigate('home')} className="hover:text-white transition-colors">Status</button></li>
+                            <li><button onClick={() => onNavigate('home')} className="hover:text-white transition-colors">Terms of Service</button></li>
                         </ul>
                     </div>
                 </div>

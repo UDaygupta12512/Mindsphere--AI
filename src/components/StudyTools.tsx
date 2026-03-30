@@ -1,7 +1,11 @@
 import React from 'react';
 import { FileText, Target, BarChart2, Calendar, ArrowRight, CheckCircle2 } from 'lucide-react';
 
-const StudyTools = () => {
+interface StudyToolsProps {
+    onNavigate?: (view: string) => void;
+}
+
+const StudyTools: React.FC<StudyToolsProps> = ({ onNavigate }) => {
     const tools = [
         {
             icon: <FileText className="w-8 h-8 text-white" />,
@@ -9,7 +13,8 @@ const StudyTools = () => {
             title: "Smart Note Taking",
             description: "AI-generated notes that capture key concepts and relationships",
             features: ["Auto-summarization", "Keyword extraction", "Mind maps"],
-            tag: "New"
+            tag: "New",
+            action: "create"
         },
         {
             icon: <Target className="w-8 h-8 text-white" />,
@@ -17,15 +22,17 @@ const StudyTools = () => {
             title: "Adaptive Testing",
             description: "Personalized quizzes that adapt to your learning progress",
             features: ["Difficulty adjustment", "Weak point focus", "Progress tracking"],
-            tag: "New"
+            tag: "New",
+            action: "review"
         },
         {
             icon: <BarChart2 className="w-8 h-8 text-white" />,
-            color: "bg-teal-500", // Gradient fallback visually similar
+            color: "bg-teal-500",
             title: "Progress Analytics",
             description: "Detailed insights into your learning patterns and achievements",
             features: ["Performance metrics", "Time tracking", "Goal setting"],
-            tag: "New"
+            tag: "New",
+            action: "analytics"
         },
         {
             icon: <Calendar className="w-8 h-8 text-white" />,
@@ -33,9 +40,16 @@ const StudyTools = () => {
             title: "Study Scheduler",
             description: "AI-optimized study plans that fit your schedule and goals",
             features: ["Smart scheduling", "Deadline tracking", "Reminder system"],
-            tag: "New"
+            tag: "New",
+            action: "dashboard"
         }
     ];
+
+    const handleToolClick = (action: string) => {
+        if (onNavigate) {
+            onNavigate(action);
+        }
+    };
 
     return (
         <section className="py-24 bg-gray-50">
@@ -77,7 +91,10 @@ const StudyTools = () => {
                                 ))}
                             </div>
 
-                            <button className="w-full py-4 rounded-xl border-2 border-gray-100 font-semibold text-gray-700 flex items-center justify-center gap-2 group-hover:bg-blue-50 group-hover:border-blue-200 group-hover:text-blue-600 transition-all">
+                            <button
+                                onClick={() => handleToolClick(tool.action)}
+                                className="w-full py-4 rounded-xl border-2 border-gray-100 font-semibold text-gray-700 flex items-center justify-center gap-2 group-hover:bg-blue-50 group-hover:border-blue-200 group-hover:text-blue-600 transition-all cursor-pointer"
+                            >
                                 Explore Tool <ArrowRight className="w-4 h-4 ml-1 transform group-hover:translate-x-1 transition-transform" />
                             </button>
                         </div>

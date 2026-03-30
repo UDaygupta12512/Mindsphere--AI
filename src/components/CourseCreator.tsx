@@ -14,9 +14,23 @@ const CourseCreator: React.FC<CourseCreatorProps> = ({ onCourseCreated }) => {
   const [url, setUrl] = useState('');
   const [title, setTitle] = useState('');
   const [fileError, setFileError] = useState('');
+  const [urlError, setUrlError] = useState('');
+  const [titleError, setTitleError] = useState('');
   const [isDragging, setIsDragging] = useState(false);
 
   const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+  const MIN_TITLE_LENGTH = 3;
+  const MAX_TITLE_LENGTH = 100;
+
+  // Validate URL format
+  const isValidUrl = (urlString: string): boolean => {
+    try {
+      const urlObj = new URL(urlString);
+      return urlObj.protocol === 'http:' || urlObj.protocol === 'https:';
+    } catch {
+      return false;
+    }
+  };
 
   const validateAndSetFile = (selectedFile: File) => {
     setFileError('');
@@ -80,7 +94,44 @@ const CourseCreator: React.FC<CourseCreatorProps> = ({ onCourseCreated }) => {
   };
 
   const handleCreateCourse = async () => {
-    if ((!file && activeTab === 'pdf') || (!url && activeTab === 'url') || !title) {
+    // Clear previous errors
+    setUrlError('');
+    setTitleError('');
+    setFileError('');
+
+    // Trim title
+    const trimmedTitle = title.trim();
+
+    // Validate title
+    if (!trimmedTitle) {
+      setTitleError('Course title is required');
+      return;
+    }
+
+    if (trimmedTitle.length < MIN_TITLE_LENGTH) {
+      setTitleError(`Title must be at least ${MIN_TITLE_LENGTH} characters`);
+      return;
+    }
+
+    if (trimmedTitle.length > MAX_TITLE_LENGTH) {
+      setTitleError(`Title must not exceed ${MAX_TITLE_LENGTH} characters`);
+      return;
+    }
+
+    // Validate content source
+    if (activeTab === 'pdf' && !file) {
+      setFileError('Please upload a PDF file');
+      return;
+    }
+
+    if (activeTab === 'url' && !url.trim()) {
+      setUrlError('Please enter a URL');
+      return;
+    }
+
+    // Validate URL if using URL tab
+    if (activeTab === 'url' && !isValidUrl(url.trim())) {
+      setUrlError('Please enter a valid URL (starting with http:// or https://)');
       return;
     }
 
@@ -117,7 +168,8 @@ const CourseCreator: React.FC<CourseCreatorProps> = ({ onCourseCreated }) => {
       onCourseCreated(newCourse);
     } catch (error) {
       console.error('Error creating course:', error);
-      alert('Failed to create course. Please try again.');
+      const errorMessage = error instanceof Error ? error.message : 'Failed to create course. Please try again.';
+      alert(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -198,10 +250,22 @@ const CourseCreator: React.FC<CourseCreatorProps> = ({ onCourseCreated }) => {
             <input
               type="text"
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={(e) => {
+                setTitle(e.target.value);
+                setTitleError('');
+              }}
               placeholder="Enter course title..."
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              maxLength={MAX_TITLE_LENGTH}
+              className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                titleError ? 'border-red-500' : 'border-gray-300'
+              }`}
             />
+            {titleError && (
+              <p className="mt-2 text-sm text-red-600 font-medium">{titleError}</p>
+            )}
+            <p className="mt-1 text-xs text-gray-500">
+              {title.length}/{MAX_TITLE_LENGTH} characters
+            </p>
           </div>
 
           {/* Content Input */}
@@ -254,20 +318,38 @@ const CourseCreator: React.FC<CourseCreatorProps> = ({ onCourseCreated }) => {
               <input
                 type="url"
                 value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://example.com/article"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                onChange={(e) => {
+                  setUrl(e.target.value);
+                  setUrlError('');
+                }}
+                placeholder="https://example.com/article or YouTube video URL"
+                className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                  urlError ? 'border-red-500' : 'border-gray-300'
+                }`}
               />
+              {urlError && (
+                <p className="mt-2 text-sm text-red-600 font-medium">{urlError}</p>
+              )}
+              <p className="mt-2 text-xs text-gray-500">
+                Supports YouTube videos, articles, and other web content
+              </p>
             </div>
           )}
 
           {/* Create Button */}
           <button
             onClick={handleCreateCourse}
-            disabled={(!file && activeTab === 'pdf') || (!url && activeTab === 'url') || !title}
-            className="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white py-4 px-6 rounded-lg font-semibold hover:from-blue-700 hover:to-purple-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={isLoading || !title.trim() || (activeTab === 'pdf' && !file) || (activeTab === 'url' && !url.trim())}
+            className="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white py-4 px-6 rounded-lg font-semibold hover:from-blue-700 hover:to-purple-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
-            Create Course with AI
+            {isLoading ? (
+              <>
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Creating Course...
+              </>
+            ) : (
+              'Create Course with AI'
+            )}
           </button>
         </div>
       </div>

@@ -562,9 +562,9 @@ PDF Content: ${source}
 Instructions:
 1. Generate a brief summary (2-3 sentences).
 2. Identify the category and level (Beginner, Intermediate, or Advanced).
-3. List 3-5 key topics covered.
-4. Create 5-8 lessons (title, description, duration, detailed content).
-5. Generate exactly 5 multiple-choice questions (MCQ) based on the PDF content. For each question:
+3. List 4-6 key topics covered.
+4. Create 8-12 comprehensive lessons (title, description, duration, detailed content with at least 4-5 paragraphs each).
+5. Generate exactly 15-20 multiple-choice questions (MCQ) based on the PDF content. For each question:
   - Provide 4 options (A, B, C, D).
   - IMPORTANT: Randomly vary the position of the correct answer (sometimes A, sometimes B, C, or D) to avoid predictable patterns.
   - Specify the correct answer.
@@ -572,8 +572,8 @@ Instructions:
   - For the correct answer, provide a detailed, non-empty explanation of why it is correct. The explanation must clearly reference the question and the options, and explain why this answer is correct compared to the others. Do NOT leave this blank or generic.
   - Do NOT regenerate questions inside your response. If an explanation is missing, include a complete explanation for that option.
   - Indicate the difficulty (easy, medium, or hard).
-6. Generate 8-12 flashcards (front, back, difficulty).
-7. Create 3-5 high-quality notes sections. For each note:
+6. Generate 15-20 flashcards (front, back, difficulty) covering all key concepts.
+7. Create 5-8 high-quality notes sections. For each note:
   - Provide a clear, concise headline (title) for the note. This will be shown as a clickable/expandable headline in the UI.
   - Provide a crisp summary (4-5 bullet points) for the note. Each bullet should be a key fact, insight, or takeaway from the section. Do NOT generate a comprehensive explanation or details at this stage.
   - Each note should be based on a key concept or section from the PDF.
@@ -638,27 +638,27 @@ Generate a detailed course with:
 1. A brief summary (2-3 sentences)
 2. Category (e.g., Programming, Data Science, Business, Design, etc.)
 3. Level (Beginner, Intermediate, or Advanced)
-4. 3-5 key topics covered
-5. 5-8 lessons with:
+4. 4-6 key topics covered
+5. 8-12 comprehensive lessons with:
    - Title
    - Description (2-3 sentences)
    - Duration (e.g., "15 min", "30 min")
-   - Detailed content (3-4 paragraphs)
-6. 5-10 quiz questions with:
+   - Detailed content (4-5 paragraphs with examples and explanations)
+6. 15-20 quiz questions with:
    - Question text
    - Type (multiple-choice, true-false, or fill-blank)
    - For multiple-choice questions: randomly vary the position of the correct answer (sometimes A, sometimes B, C, or D) to avoid predictable patterns
    - Options (for multiple-choice)
    - Correct answer
-   - Explanation
+   - Detailed explanation of why the answer is correct
    - Difficulty (easy, medium, or hard)
-7. 8-12 flashcards with:
+7. 15-20 flashcards with:
    - Front (question or term)
    - Back (answer or definition)
    - Difficulty level
-8. 3-5 comprehensive notes with:
+8. 5-8 comprehensive notes with:
    - Title
-   - Content (detailed explanation)
+   - Content (detailed explanation with key points)
    - Related topics
 
 Return the response as a valid JSON object with this exact structure:
@@ -791,7 +791,7 @@ export const generateChatResponse = async (message, coursesContext, history = []
   let conversationContext = '';
   if (history && history.length > 0) {
     const recentHistory = history.slice(-10); // Keep last 10 messages for context
-    conversationContext = '\n\nPrevious conversation:\n' + 
+    conversationContext = '\n\nPrevious conversation:\n' +
       recentHistory.map(h => `${h.role === 'user' ? 'Student' : 'Tutor'}: ${h.content}`).join('\n');
   }
 
@@ -799,29 +799,31 @@ export const generateChatResponse = async (message, coursesContext, history = []
 
 Student's question: ${message}
 
-IMPORTANT: Provide a SHORT, DIRECT answer (2-4 sentences max). 
+IMPORTANT: Provide a SHORT, DIRECT answer (2-4 sentences max).
 - Answer the question directly and concisely
 - No lengthy explanations or extra details unless specifically asked
 - If the question relates to their enrolled courses, mention it briefly
 - Be clear and to the point`;
 
   try {
-    // Try OpenRouter first, fallback to Gemini
-    if (openRouterApiKey) {
-      return await makeOpenRouterCall(prompt, 'openai/gpt-3.5-turbo');
-    } else {
-      return await makeAICall(prompt);
-    }
-  } catch (error) {
-    console.error('Error generating chat response:', error);
-    // If OpenRouter failed, try Gemini as fallback
-    if (openRouterApiKey && geminiApiKeys.length > 0) {
+    // Try Gemini first since it's more reliable for chat
+    if (geminiApiKeys.length > 0) {
       try {
-        return await makeAICall(prompt);
-      } catch (fallbackError) {
-        console.error('Fallback chat response also failed:', fallbackError);
+        return await makeGeminiCallWithRotation(prompt);
+      } catch (geminiError) {
+        console.warn('Gemini chat failed, trying OpenRouter:', geminiError.message);
+        // Fall through to OpenRouter
       }
     }
+
+    // Try OpenRouter as fallback
+    if (openRouterApiKey) {
+      return await makeOpenRouterCall(prompt, 'openai/gpt-3.5-turbo');
+    }
+
+    throw new Error('No AI service available');
+  } catch (error) {
+    console.error('Error generating chat response:', error);
     throw new Error('Failed to generate response. Please try again.');
   }
 };
@@ -913,7 +915,7 @@ Return the response as a valid JSON object with this exact structure:
 
 // Generate quiz questions based on content
 export const generateQuizQuestions = async ({ title, source, content, fileName, url, timestamp }) => {
-  const prompt = `Based on the following content, generate 4-6 quiz questions. Make them educational and relevant to the content.
+  const prompt = `Based on the following content, generate 10-15 quiz questions. Make them educational and relevant to the content. Include a mix of difficulties (easy, medium, hard).
 
 Content Title: ${title}
 Source Type: ${source}
@@ -1035,5 +1037,37 @@ const makeAICall = async (prompt) => {
   } catch (error) {
     console.error('Error in makeAICall:', error);
     throw error;
+  }
+};
+
+/**
+ * Generate AI content from a raw prompt (returns text, optionally parsed as JSON)
+ * This is a generic function for ad-hoc AI content generation
+ * @param {string} prompt - The prompt to send to the AI
+ * @param {boolean} parseJson - Whether to attempt parsing the response as JSON (default: true)
+ * @returns {Promise<string|object>} Response text or parsed JSON object
+ */
+export const generateAIContent = async (prompt, parseJson = true) => {
+  if (geminiApiKeys.length === 0 && !openRouterApiKey) {
+    throw new Error('AI system is not initialized. Please check your API keys.');
+  }
+
+  try {
+    const text = await makeGeminiCallWithRotation(prompt);
+
+    if (!parseJson) {
+      return text;
+    }
+
+    // Try to parse as JSON
+    try {
+      return parseAiJsonSafely(text);
+    } catch {
+      // If JSON parsing fails, return the raw text
+      return text;
+    }
+  } catch (error) {
+    console.error('Error generating AI content:', error);
+    throw new Error('Failed to generate AI content. Please try again.');
   }
 };

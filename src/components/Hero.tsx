@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ArrowRight, Check } from 'lucide-react';
 import DemoModal from './DemoModal';
 import hero3dImage from '../assets/hero_3d.png';
@@ -6,6 +6,78 @@ import hero3dImage from '../assets/hero_3d.png';
 interface HeroProps {
   onGetStarted: () => void;
 }
+
+// Count-up animation component with Intersection Observer
+const CountUpStat: React.FC<{ value: string; label: string }> = ({ value, label }) => {
+  const [displayValue, setDisplayValue] = useState('0');
+  const [hasAnimated, setHasAnimated] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Parse the stat value - extract number, suffix (like '+', '%'), and prefix (like '$')
+  const parseValue = (val: string): { number: number; suffix: string; prefix: string; hasComma: boolean } => {
+    const prefix = val.match(/^[^\d]*/)?.[0] || '';
+    const suffix = val.match(/[^\d]*$/)?.[0] || '';
+    const numStr = val.replace(/[^\d.]/g, '');
+    const number = parseFloat(numStr) || 0;
+    const hasComma = val.includes(',');
+    return { number, suffix, prefix, hasComma };
+  };
+
+  const { number: targetNumber, suffix, prefix, hasComma } = parseValue(value);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting && !hasAnimated) {
+            setHasAnimated(true);
+            animateCount();
+          }
+        });
+      },
+      { threshold: 0.3 }
+    );
+
+    if (ref.current) {
+      observer.observe(ref.current);
+    }
+
+    return () => observer.disconnect();
+  }, [hasAnimated]);
+
+  const animateCount = () => {
+    const duration = 2000; // 2 seconds
+    const steps = 60;
+    const stepDuration = duration / steps;
+    let currentStep = 0;
+
+    const timer = setInterval(() => {
+      currentStep++;
+      const progress = currentStep / steps;
+      // Easing function for smooth deceleration
+      const easeOut = 1 - Math.pow(1 - progress, 3);
+      const currentValue = Math.floor(targetNumber * easeOut);
+
+      // Format with comma if original had comma
+      const formatted = hasComma ? currentValue.toLocaleString() : currentValue.toString();
+      setDisplayValue(`${prefix}${formatted}${suffix}`);
+
+      if (currentStep >= steps) {
+        clearInterval(timer);
+        setDisplayValue(value); // Ensure final value matches original
+      }
+    }, stepDuration);
+  };
+
+  return (
+    <div ref={ref} className="text-center p-8 bg-[#111]/80 backdrop-blur-xl rounded-2xl border border-white/10 hover:border-neon-purple/60 hover:bg-[#1a1a1a] transition-all duration-300 group shadow-2xl">
+      <div className="text-5xl font-black text-neon-blue drop-shadow-[0_0_10px_rgba(0,243,255,0.6)] mb-4 group-hover:scale-110 transition-transform duration-300 inline-block">
+        {displayValue}
+      </div>
+      <div className="text-xl text-gray-300 font-medium group-hover:text-white transition-colors">{label}</div>
+    </div>
+  );
+};
 
 const Hero: React.FC<HeroProps> = ({ onGetStarted }) => {
   const [isDemoModalOpen, setIsDemoModalOpen] = React.useState(false);
@@ -72,16 +144,10 @@ const Hero: React.FC<HeroProps> = ({ onGetStarted }) => {
 
         </div>
 
-        {/* Hero Stats (Fixed Visibility) */}
+        {/* Hero Stats with Count-Up Animation */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mt-16 md:mt-32">
           {stats.map((stat, index) => (
-            <div key={index} className="text-center p-8 bg-[#111]/80 backdrop-blur-xl rounded-2xl border border-white/10 hover:border-neon-purple/60 hover:bg-[#1a1a1a] transition-all duration-300 group shadow-2xl">
-              {/* Force Solid Color with Shadow for Visibility */}
-              <div className="text-5xl font-black text-neon-blue drop-shadow-[0_0_10px_rgba(0,243,255,0.6)] mb-4 group-hover:scale-110 transition-transform duration-300 inline-block">
-                {stat.value}
-              </div>
-              <div className="text-xl text-gray-300 font-medium group-hover:text-white transition-colors">{stat.label}</div>
-            </div>
+            <CountUpStat key={index} value={stat.value} label={stat.label} />
           ))}
         </div>
       </div>

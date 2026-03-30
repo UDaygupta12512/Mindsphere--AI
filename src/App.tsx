@@ -1,4 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useDarkMode } from './hooks/useDarkMode';
+import { useStreak } from './hooks/useStreak';
 import Header from './components/Header';
 import Hero from './components/Hero';
 import Dashboard from './components/Dashboard';
@@ -9,6 +11,7 @@ import AuthModal from './components/AuthModal';
 import CourseCatalog from './components/CourseCatalog';
 import CourseDetail from './components/CourseDetail';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
+import ReviewDashboard from './components/ReviewDashboard';
 import Features from './components/Features';
 import HowItWorks from './components/HowItWorks';
 import CTASection from './components/CTASection';
@@ -18,16 +21,26 @@ import Footer from './components/Footer';
 import { Course } from './types/course';
 import { User } from './types/auth';
 import { CatalogCourse } from './utils/catalogData';
-import { coursesApi, catalogApi, api, getToken, removeToken } from './lib/api';
+import { coursesApi, catalogApi, api, getToken, removeToken, authEvents } from './lib/api';
 
 function App() {
-  const [currentView, setCurrentView] = useState('home');
+  const { isDark, toggle: toggleDark } = useDarkMode();
+  const { currentStreak, longestStreak } = useStreak();
+  // Get initial view from URL hash
+  const getViewFromHash = () => {
+    const hash = window.location.hash.slice(1); // Remove #
+    const validViews = ['home', 'catalog', 'catalog-detail', 'dashboard', 'create', 'course', 'chatbot', 'analytics', 'review'];
+    return validViews.includes(hash) ? hash : 'home';
+  };
+
+  const [currentView, setCurrentView] = useState(getViewFromHash);
   const [courses, setCourses] = useState<Course[]>([]);
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
   const [selectedCatalogCourse, setSelectedCatalogCourse] = useState<CatalogCourse | null>(null);
   const [enrolledCourseIds, setEnrolledCourseIds] = useState<string[]>([]);
   const [user, setUser] = useState<User | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [pendingView, setPendingView] = useState<string | null>(null);
 
   // Initialize auth and load user data on app start
   useEffect(() => {
@@ -84,28 +97,78 @@ function App() {
     }
   }, [user]);
 
+  // Handle browser back/forward navigation
+  useEffect(() => {
+    const handlePopState = () => {
+      const view = getViewFromHash();
+      setCurrentView(view);
+      setSelectedCourse(null);
+      setSelectedCatalogCourse(null);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  // Subscribe to auth events (token expiry) for automatic logout
+  useEffect(() => {
+    const unsubscribe = authEvents.subscribe((event) => {
+      if (event === 'tokenExpired') {
+        setUser(null);
+        setCourses([]);
+        setEnrolledCourseIds([]);
+        setCurrentView('home');
+        // Show auth modal so user can log back in
+        setIsAuthModalOpen(true);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Update URL hash when view changes
+  const updateUrlHash = useCallback((view: string) => {
+    const newHash = view === 'home' ? '' : `#${view}`;
+    if (window.location.hash !== newHash && window.location.hash !== `#${view}`) {
+      window.history.pushState({ view }, '', newHash || window.location.pathname);
+    }
+  }, []);
+
   const handleNavigate = (view: string) => {
     // Require authentication for certain views
-    if (!user && ['dashboard', 'create', 'chatbot', 'analytics'].includes(view)) {
+    if (!user && ['dashboard', 'create', 'chatbot', 'analytics', 'review'].includes(view)) {
+      setPendingView(view);
       setIsAuthModalOpen(true);
       return;
     }
     setCurrentView(view);
+    updateUrlHash(view);
     setSelectedCourse(null);
     setSelectedCatalogCourse(null);
   };
 
   const handleGetStarted = () => {
     if (!user) {
+      setPendingView('create');
       setIsAuthModalOpen(true);
     } else {
       setCurrentView('create');
+      updateUrlHash('create');
     }
+  };
+
+  const handleViewExamples = () => {
+    setCurrentView('catalog');
+    updateUrlHash('catalog');
   };
 
   const handleAuth = async (userData: User) => {
     setUser(userData);
-    setCurrentView('dashboard');
+    // Navigate to pending view if set, otherwise dashboard
+    const targetView = pendingView || 'dashboard';
+    setCurrentView(targetView);
+    updateUrlHash(targetView);
+    setPendingView(null);
 
     // Fetch user's courses after authentication
     try {
@@ -142,39 +205,70 @@ function App() {
     setCourses([]);
     setEnrolledCourseIds([]);
     setCurrentView('home');
+    updateUrlHash('home');
     removeToken();
     localStorage.removeItem('edusynth-user');
   };
 
+  // Refresh courses from backend (for real-time updates)
+  const refreshCourses = useCallback(async () => {
+    if (!user) return;
+
+    try {
+      const userCourses = await coursesApi.getAll();
+      setCourses(userCourses.map(course => ({
+        ...course,
+        id: course._id,
+        createdAt: new Date(course.createdAt),
+        lastAccessed: course.lastAccessed ? new Date(course.lastAccessed) : undefined
+      } as unknown as Course)));
+    } catch (error) {
+      console.error('Error refreshing courses:', error);
+    }
+  }, [user]);
+
   const handleCourseCreated = (course: Course) => {
-    setCourses(prev => [course, ...prev]);
+    setCourses(prev => {
+      const exists = prev.some(c => c.id === course.id || c.title === course.title);
+      if (exists) {
+        return prev.map(c => (c.id === course.id || c.title === course.title) ? course : c);
+      }
+      return [course, ...prev];
+    });
     setCurrentView('dashboard');
+    updateUrlHash('dashboard');
   };
 
   const handleSelectCourse = (course: Course) => {
     setSelectedCourse(course);
     setCurrentView('course');
+    updateUrlHash('course');
   };
 
-  const handleUpdateCourse = (updatedCourse: Course) => {
+  const handleUpdateCourse = async (updatedCourse: Course) => {
     setCourses(prev => prev.map(course =>
       (course._id || course.id) === (updatedCourse._id || updatedCourse.id) ? updatedCourse : course
     ));
     setSelectedCourse(updatedCourse);
+    // Refresh to get latest data from backend
+    await refreshCourses();
   };
 
   const handleBackToDashboard = () => {
     setCurrentView('dashboard');
+    updateUrlHash('dashboard');
     setSelectedCourse(null);
   };
 
   const handleCatalogCourseSelect = (course: CatalogCourse) => {
     setSelectedCatalogCourse(course);
     setCurrentView('catalog-detail');
+    updateUrlHash('catalog-detail');
   };
 
   const handleBackToCatalog = () => {
     setCurrentView('catalog');
+    updateUrlHash('catalog');
     setSelectedCatalogCourse(null);
   };
 
@@ -194,12 +288,31 @@ function App() {
         lastAccessed: enrolledCourse.lastAccessed ? new Date(enrolledCourse.lastAccessed) : new Date()
       } as unknown as Course;
 
-      setCourses(prev => [courseWithId, ...prev]);
-      setEnrolledCourseIds(prev => [...prev, catalogCourse.id]);
-      setCurrentView('dashboard');
+      // Check if course already exists to prevent duplicates
+      setCourses(prev => {
+        const exists = prev.some(c => c.id === courseWithId.id || c.title === courseWithId.title);
+        if (exists) {
+          // Update existing course instead of adding duplicate
+          return prev.map(c => (c.id === courseWithId.id || c.title === courseWithId.title) ? courseWithId : c);
+        }
+        return [courseWithId, ...prev];
+      });
+
+      setEnrolledCourseIds(prev => {
+        if (prev.includes(catalogCourse.id)) {
+          return prev;
+        }
+        return [...prev, catalogCourse.id];
+      });
+
+      // Navigate directly to the enrolled course
+      setSelectedCourse(courseWithId);
+      setCurrentView('course');
+      updateUrlHash('course');
     } catch (error) {
       console.error('Error enrolling in course:', error);
-      alert('Failed to enroll in course. Please try again.');
+      const errorMessage = error instanceof Error ? error.message : 'Failed to enroll in course. Please try again.';
+      alert(errorMessage);
     }
   };
 
@@ -209,7 +322,18 @@ function App() {
     if (enrolledCourse) {
       setSelectedCourse(enrolledCourse);
       setCurrentView('course');
+      updateUrlHash('course');
     }
+  };
+
+  const handleCreateCourse = () => {
+    setCurrentView('create');
+    updateUrlHash('create');
+  };
+
+  const handleReviewClick = () => {
+    setCurrentView('review');
+    updateUrlHash('review');
   };
 
   const renderCurrentView = () => {
@@ -219,11 +343,11 @@ function App() {
           <>
             <Hero onGetStarted={handleGetStarted} />
             <Features />
-            <AITutorSection />
-            <StudyTools />
+            <AITutorSection onNavigate={handleNavigate} />
+            <StudyTools onNavigate={handleNavigate} />
             <HowItWorks />
-            <CTASection onGetStarted={handleGetStarted} />
-            <Footer />
+            <CTASection onGetStarted={handleGetStarted} onViewExamples={handleViewExamples} />
+            <Footer onNavigate={handleNavigate} />
           </>
         );
       case 'catalog':
@@ -253,7 +377,11 @@ function App() {
           <Dashboard
             courses={courses}
             onSelectCourse={handleSelectCourse}
-            onCreateCourse={() => setCurrentView('create')}
+            onCreateCourse={handleCreateCourse}
+            userName={user?.name}
+            currentStreak={currentStreak}
+            longestStreak={longestStreak}
+            onReviewClick={handleReviewClick}
           />
         );
       case 'create':
@@ -264,18 +392,27 @@ function App() {
             course={selectedCourse}
             onBack={handleBackToDashboard}
             onUpdateCourse={handleUpdateCourse}
+            userName={user?.name}
+            refreshCourses={refreshCourses}
           />
         ) : (
           <Dashboard
+            key={`dashboard-${courses.length}-${courses.map(c => c.progress).join('-')}`}
             courses={courses}
             onSelectCourse={handleSelectCourse}
-            onCreateCourse={() => setCurrentView('create')}
+            onCreateCourse={handleCreateCourse}
+            userName={user?.name}
+            currentStreak={currentStreak}
+            longestStreak={longestStreak}
+            onReviewClick={handleReviewClick}
           />
         );
       case 'chatbot':
         return <ChatBot courses={courses} />;
       case 'analytics':
-        return <AnalyticsDashboard onNavigate={handleNavigate} />;
+        return <AnalyticsDashboard key={`analytics-${courses.length}-${courses.map(c => c.progress).join('-')}`} onNavigate={handleNavigate} />;
+      case 'review':
+        return <ReviewDashboard onBack={handleBackToDashboard} />;
       default:
         return <Hero onGetStarted={handleGetStarted} />;
     }
@@ -289,6 +426,8 @@ function App() {
         user={user}
         onAuthClick={() => setIsAuthModalOpen(true)}
         onLogout={handleLogout}
+        isDark={isDark}
+        onToggleDark={toggleDark}
       />
       <main>
         {renderCurrentView()}

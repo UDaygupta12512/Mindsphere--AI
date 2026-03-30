@@ -3,6 +3,18 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? '' : 'http://localhost:4000');
 const TOKEN_KEY = 'ms_token';
 
+// Event for auth state changes (token expired, logout)
+export const authEvents = {
+  listeners: new Set<(event: 'logout' | 'tokenExpired') => void>(),
+  subscribe(callback: (event: 'logout' | 'tokenExpired') => void) {
+    this.listeners.add(callback);
+    return () => this.listeners.delete(callback);
+  },
+  emit(event: 'logout' | 'tokenExpired') {
+    this.listeners.forEach(callback => callback(event));
+  }
+};
+
 // Get stored token
 export const getToken = (): string | null => {
   return localStorage.getItem(TOKEN_KEY);
@@ -61,15 +73,38 @@ async function apiRequest<T>(
 
   try {
     const response = await fetch(url, requestOptions);
-    
-    // Parse response
-    const data = await response.json();
-    
+
+    // Handle 401 Unauthorized - token expired or invalid
+    if (response.status === 401) {
+      removeToken();
+      localStorage.removeItem('edusynth-user');
+      authEvents.emit('tokenExpired');
+      throw new Error('Session expired. Please log in again.');
+    }
+
+    // Try to parse response as JSON, handle non-JSON responses gracefully
+    let data: T | { error?: string };
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      try {
+        data = await response.json();
+      } catch {
+        throw new Error('Invalid response from server');
+      }
+    } else {
+      // For non-JSON responses, create a generic error
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      data = {} as T;
+    }
+
     // Handle errors
     if (!response.ok) {
-      throw new Error(data.error || `HTTP error! status: ${response.status}`);
+      const errorData = data as { error?: string };
+      throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
     }
-    
+
     return data as T;
   } catch (error) {
     if (error instanceof Error) {
@@ -222,9 +257,13 @@ export const authApi = {
   signup: (data: { name: string; email: string; password: string }) => {
     return api.post<{ token: string; user: UserResponse }>('/api/auth/signup', data);
   },
-  
+
   login: (data: { email: string; password: string }) => {
     return api.post<{ token: string; user: UserResponse }>('/api/auth/login', data);
+  },
+
+  resetPassword: (data: { email: string; newPassword: string }) => {
+    return api.post<{ message: string }>('/api/auth/reset-password', data);
   },
 };
 
@@ -280,4 +319,201 @@ export const chatApi = {
     return api.post<{ reply: string }>('/api/chat', { message, history });
   },
 };
+
+// SRS (Spaced Repetition System) API
+export const srsApi = {
+  // Track a wrong answer or difficult item
+  track: (data: {
+    courseId: string;
+    itemType: 'flashcard' | 'quiz';
+    itemId: string;
+    question: string;
+    answer: string;
+    isCorrect: boolean;
+  }) => {
+    return api.post<{ success: boolean; totalReviewItems: number }>('/api/srs/track', data);
+  },
+
+  // Get items due for review
+  getReviewItems: (limit = 20) => {
+    return api.get<{
+      success: boolean;
+      reviewItems: Array<{
+        itemType: 'flashcard' | 'quiz';
+        itemId: string;
+        courseId: string;
+        courseTitle: string;
+        question: string;
+        answer: string;
+        difficulty: number;
+        wrongCount: number;
+        correctCount: number;
+        lastReviewed?: string;
+        nextReview: string;
+      }>;
+      totalDue: number;
+    }>(`/api/srs/review-items?limit=${limit}`);
+  },
+
+  // Get SRS statistics
+  getStats: () => {
+    return api.get<{
+      success: boolean;
+      stats: {
+        total: number;
+        dueNow: number;
+        dueTomorrow: number;
+        atRisk: number;
+        needsReview: number;
+        mastered: number;
+      };
+    }>('/api/srs/stats');
+  },
+
+  // Record a review
+  review: (data: {
+    courseId: string;
+    itemType: 'flashcard' | 'quiz';
+    itemId: string;
+    quality: number; // 0-5
+  }) => {
+    return api.post<{ success: boolean; nextReview: string }>('/api/srs/review', data);
+  },
+};
+
+// Learning API - Personalized paths, gap reports, and personas
+export interface LearningPath {
+  days: Array<{
+    day: number;
+    title: string;
+    focus: string;
+    tasks: Array<{
+      type: 'lesson' | 'flashcard' | 'quiz';
+      title: string;
+      duration: string;
+      lessonIndex?: number;
+      count?: number;
+    }>;
+    tips: string;
+  }>;
+  summary: {
+    totalStudyHours: number;
+    lessonsPerDay: number;
+    reviewSessions: number;
+  };
+}
+
+export interface GapReport {
+  overallAnalysis: string;
+  strengths: string[];
+  weaknesses: string[];
+  miniLessons: Array<{
+    topic: string;
+    explanation: string;
+    keyPoints: string[];
+    example: string;
+    practiceQuestion: string;
+  }>;
+  recommendations: string[];
+  encouragement: string;
+}
+
+export interface LearningPersona {
+  type: string;
+  title: string;
+  description: string;
+  traits: string[];
+  stats: {
+    preferredTime: string;
+    preferredDay: string;
+    avgSessionLength: string;
+    totalSessions: number;
+    quizAverage: string;
+    retentionRate: string;
+    strongestArea: string;
+  };
+  tips: string[];
+  color: string;
+  icon: string;
+  shareText: string;
+}
+
+export const learningApi = {
+  // Generate personalized learning path
+  generatePath: (data: { courseId: string; targetDays: number; dailyHours?: number }) => {
+    return api.post<{
+      success: boolean;
+      learningPath: LearningPath;
+      courseTitle: string;
+    }>('/api/learning/generate-path', data);
+  },
+
+  // Get existing learning path for a course
+  getPath: (courseId: string) => {
+    return api.get<{
+      success: boolean;
+      learningPath: LearningPath | null;
+      currentDay?: number;
+      targetDays?: number;
+      createdAt?: string;
+    }>(`/api/learning/path/${courseId}`);
+  },
+
+  // Generate gap report after quiz
+  generateGapReport: (data: {
+    courseId: string;
+    score: number;
+    quizResults: Array<{
+      question: string;
+      userAnswer: string;
+      correctAnswer: string;
+      isCorrect: boolean;
+      topic?: string;
+    }>;
+  }) => {
+    return api.post<{
+      success: boolean;
+      gapReport: GapReport;
+      score: number;
+      totalQuestions: number;
+      correctCount: number;
+      wrongCount: number;
+    }>('/api/learning/gap-report', data);
+  },
+
+  // Get learning persona
+  getPersona: () => {
+    return api.get<{ success: boolean; persona: LearningPersona }>('/api/learning/persona');
+  },
+
+  // Track study session for persona analysis
+  trackSession: (data: {
+    startTime: string;
+    endTime: string;
+    activityType: 'lesson' | 'quiz' | 'flashcard' | 'review';
+    performance?: number;
+    courseId?: string;
+  }) => {
+    return api.post<{ success: boolean }>('/api/learning/track-session', data);
+  },
+
+  // Get AI-powered course recommendations
+  getRecommendations: () => {
+    return api.get<{
+      success: boolean;
+      recommendations: Array<{
+        topic: string;
+        reason: string;
+        confidence: number;
+        isTrending?: boolean;
+        strength?: string;
+      }>;
+      strengths: string[];
+      completedCount: number;
+      inProgressCount: number;
+    }>('/api/learning/recommendations');
+  },
+};
+
+
  

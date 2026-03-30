@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Search, Filter, Star, Users, Clock, BookOpen, TrendingUp } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { Search, Filter, Star, Users, Clock, BookOpen, TrendingUp, X } from 'lucide-react';
 import { CatalogCourse } from '../utils/catalogData';
 import { catalogApi } from '../lib/api';
 
@@ -10,14 +10,25 @@ interface CourseCatalogProps {
 
 const CourseCatalog: React.FC<CourseCatalogProps> = ({ onCourseSelect, enrolledCourseIds }) => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [selectedLevel, setSelectedLevel] = useState<string>('All');
   const [sortBy, setSortBy] = useState<string>('popular');
   const [catalogCourses, setCatalogCourses] = useState<CatalogCourse[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Debounce search input
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery.trim().toLowerCase());
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   useEffect(() => {
     const fetchCatalog = async () => {
+      setError(null);
       try {
         const courses = await catalogApi.getAll();
         const transformedCourses = courses.map((course: any) => ({
@@ -48,54 +59,83 @@ const CourseCatalog: React.FC<CourseCatalogProps> = ({ onCourseSelect, enrolledC
           certificate: course.certificate || false,
         }));
         setCatalogCourses(transformedCourses);
-      } catch (error) {
-        console.error('Error fetching catalog:', error);
+      } catch (err) {
+        console.error('Error fetching catalog:', err);
+        setError('Failed to load courses. Please try again.');
       } finally {
         setLoading(false);
       }
     };
-    
+
     fetchCatalog();
   }, []);
 
-  const getCategories = () => {
-    const categories = new Set(catalogCourses.map(course => course.category));
-    return Array.from(categories);
-  };
+  // Memoize categories for performance
+  const categories = useMemo(() => {
+    const cats = new Set(catalogCourses.map(course => course.category));
+    return ['All', ...Array.from(cats).sort()];
+  }, [catalogCourses]);
 
-  const categories = ['All', ...getCategories()];
   const levels = ['All', 'Beginner', 'Intermediate', 'Advanced'];
 
-  const filteredCourses = catalogCourses
-    .filter(course => {
-      const matchesSearch = course.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                           course.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                           course.instructor.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesCategory = selectedCategory === 'All' || course.category === selectedCategory;
-      const matchesLevel = selectedLevel === 'All' || course.level === selectedLevel;
-      return matchesSearch && matchesCategory && matchesLevel;
-    })
-    .sort((a, b) => {
-      switch (sortBy) {
-        case 'popular':
-          return b.studentsEnrolled - a.studentsEnrolled;
-        case 'rating':
-          return b.rating - a.rating;
-        case 'newest':
-          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-        default:
-          return 0;
-      }
-    });
+  // Clear all filters
+  const clearFilters = useCallback(() => {
+    setSearchQuery('');
+    setSelectedCategory('All');
+    setSelectedLevel('All');
+    setSortBy('popular');
+  }, []);
 
-  const totalStudents = catalogCourses.reduce((sum, c) => sum + (c.studentsEnrolled || 0), 0);
-  const avgRating = catalogCourses.length > 0 
-    ? (catalogCourses.reduce((sum, c) => sum + (c.rating || 0), 0) / catalogCourses.length).toFixed(1)
-    : '0';
+  // Check if any filters are active
+  const hasActiveFilters = searchQuery || selectedCategory !== 'All' || selectedLevel !== 'All';
+
+  // Memoize filtered courses for performance
+  const filteredCourses = useMemo(() => {
+    return catalogCourses
+      .filter(course => {
+        // Search across multiple fields
+        const searchLower = debouncedSearch;
+        const matchesSearch = !searchLower ||
+          course.title.toLowerCase().includes(searchLower) ||
+          course.description.toLowerCase().includes(searchLower) ||
+          course.instructor.toLowerCase().includes(searchLower) ||
+          course.category.toLowerCase().includes(searchLower) ||
+          (course.topics && course.topics.some(t => t.toLowerCase().includes(searchLower)));
+        const matchesCategory = selectedCategory === 'All' || course.category === selectedCategory;
+        const matchesLevel = selectedLevel === 'All' || course.level === selectedLevel;
+        return matchesSearch && matchesCategory && matchesLevel;
+      })
+      .sort((a, b) => {
+        switch (sortBy) {
+          case 'popular':
+            return b.studentsEnrolled - a.studentsEnrolled;
+          case 'rating':
+            return b.rating - a.rating;
+          case 'newest':
+            return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+          case 'title':
+            return a.title.localeCompare(b.title);
+          default:
+            return 0;
+        }
+      });
+  }, [catalogCourses, debouncedSearch, selectedCategory, selectedLevel, sortBy]);
+
+  const totalStudents = useMemo(() =>
+    catalogCourses.reduce((sum, c) => sum + (c.studentsEnrolled || 0), 0),
+    [catalogCourses]
+  );
+
+  const avgRating = useMemo(() =>
+    catalogCourses.length > 0
+      ? (catalogCourses.reduce((sum, c) => sum + (c.rating || 0), 0) / catalogCourses.length).toFixed(1)
+      : '0',
+    [catalogCourses]
+  );
 
   const stats = [
     { label: 'Total Courses', value: catalogCourses.length, icon: BookOpen, color: 'bg-blue-500' },
-    { label: 'Categories', value: getCategories().length, icon: Filter, color: 'bg-green-500' },
+    { label: 'Categories', value: categories.length - 1, icon: Filter, color: 'bg-green-500' },
     { label: 'Students Learning', value: totalStudents.toLocaleString(), icon: Users, color: 'bg-orange-500' },
     { label: 'Avg Rating', value: avgRating, icon: Star, color: 'bg-yellow-500' }
   ];
@@ -106,6 +146,24 @@ const CourseCatalog: React.FC<CourseCatalogProps> = ({ onCourseSelect, enrolledC
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-gray-600">Loading catalog...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 flex items-center justify-center">
+        <div className="text-center bg-white p-8 rounded-2xl shadow-lg">
+          <div className="text-red-500 text-5xl mb-4">!</div>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Error Loading Courses</h2>
+          <p className="text-gray-600 mb-4">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition"
+          >
+            Try Again
+          </button>
         </div>
       </div>
     );
@@ -148,8 +206,17 @@ const CourseCatalog: React.FC<CourseCatalogProps> = ({ onCourseSelect, enrolledC
                 placeholder="Search courses, instructors, topics..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full pl-12 pr-10 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  aria-label="Clear search"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              )}
             </div>
 
             <div>
@@ -180,9 +247,20 @@ const CourseCatalog: React.FC<CourseCatalogProps> = ({ onCourseSelect, enrolledC
           </div>
 
           <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-200">
-            <p className="text-sm text-gray-600">
-              Showing <span className="font-semibold">{filteredCourses.length}</span> courses
-            </p>
+            <div className="flex items-center space-x-4">
+              <p className="text-sm text-gray-600">
+                Showing <span className="font-semibold">{filteredCourses.length}</span> of {catalogCourses.length} courses
+              </p>
+              {hasActiveFilters && (
+                <button
+                  onClick={clearFilters}
+                  className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center space-x-1"
+                >
+                  <X className="h-4 w-4" />
+                  <span>Clear filters</span>
+                </button>
+              )}
+            </div>
             <div className="flex items-center space-x-2">
               <span className="text-sm text-gray-600">Sort by:</span>
               <select
@@ -194,13 +272,31 @@ const CourseCatalog: React.FC<CourseCatalogProps> = ({ onCourseSelect, enrolledC
                 <option value="popular">Most Popular</option>
                 <option value="rating">Highest Rated</option>
                 <option value="newest">Newest</option>
+                <option value="title">A-Z</option>
               </select>
             </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredCourses.map((course) => {
+        {filteredCourses.length === 0 ? (
+          <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-12 text-center">
+            <Search className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+            <h3 className="text-xl font-bold text-gray-900 mb-2">No courses found</h3>
+            <p className="text-gray-600 mb-6">
+              {searchQuery
+                ? `No courses match "${searchQuery}". Try different keywords or filters.`
+                : 'No courses match your current filters. Try adjusting your selection.'}
+            </p>
+            <button
+              onClick={clearFilters}
+              className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition"
+            >
+              Clear All Filters
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredCourses.map((course) => {
             const isEnrolled = enrolledCourseIds.includes(course.id);
 
             return (
@@ -284,13 +380,6 @@ const CourseCatalog: React.FC<CourseCatalogProps> = ({ onCourseSelect, enrolledC
               </div>
             );
           })}
-        </div>
-
-        {filteredCourses.length === 0 && (
-          <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-12 text-center">
-            <TrendingUp className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-xl font-semibold text-gray-900 mb-2">No courses found</h3>
-            <p className="text-gray-600">Try adjusting your filters or search query</p>
           </div>
         )}
       </div>

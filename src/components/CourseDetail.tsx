@@ -4,6 +4,7 @@ import {
   CheckCircle, Play, Lock, Loader
 } from 'lucide-react';
 import { CatalogCourse } from '../utils/catalogData';
+import CountUpNumber from './CountUpNumber';
 
 interface CourseDetailProps {
   course: CatalogCourse;
@@ -73,7 +74,13 @@ const CourseDetail: React.FC<CourseDetailProps> = ({
                     </div>
                     <div className="flex items-center space-x-1">
                       <Users className="h-5 w-5" />
-                      <span>{course.studentsEnrolled.toLocaleString()} students</span>
+                      <CountUpNumber
+                        end={course.studentsEnrolled}
+                        separator=","
+                        duration={2500}
+                        suffix=" students"
+                        className="inline"
+                      />
                     </div>
                     <div className="flex items-center space-x-1">
                       <Clock className="h-5 w-5" />
@@ -203,11 +210,20 @@ const CourseDetail: React.FC<CourseDetailProps> = ({
                           <p className="text-sm text-gray-600">Instructor Rating</p>
                         </div>
                         <div>
-                          <p className="text-2xl font-bold text-gray-900">{course.studentsEnrolled.toLocaleString()}</p>
+                          <CountUpNumber
+                            end={course.studentsEnrolled}
+                            separator=","
+                            duration={2500}
+                            className="text-2xl font-bold text-gray-900"
+                          />
                           <p className="text-sm text-gray-600">Students</p>
                         </div>
                         <div>
-                          <p className="text-2xl font-bold text-gray-900">{course.totalLessons}</p>
+                          <CountUpNumber
+                            end={course.totalLessons}
+                            duration={2000}
+                            className="text-2xl font-bold text-gray-900"
+                          />
                           <p className="text-sm text-gray-600">Lessons</p>
                         </div>
                       </div>
