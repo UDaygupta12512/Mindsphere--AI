@@ -12,6 +12,7 @@ export interface Course {
   topics: string[];
   progress: number;
   notes: CourseNote[];
+  insights?: CourseInsight[];
   quizzes: Quiz[];
   flashcards: Flashcard[];
   summary: string;
@@ -28,6 +29,14 @@ export interface Course {
   lastAccessed?: Date;
   whatYouLearn?: string[];
   requirements?: string[];
+}
+
+export interface CourseInsight {
+  title: string;
+  whyItMatters: string;
+  applyItToday: string;
+  successMetric: string;
+  relatedTopics?: string[];
 }
 
 export interface Lesson {

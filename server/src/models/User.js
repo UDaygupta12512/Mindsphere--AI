@@ -113,6 +113,94 @@ const userSchema = new mongoose.Schema({
     dayOfWeek: Number, // 0-6
     hourOfDay: Number // 0-23
   }],
+  // Quiz attempts for weak area tracking
+  quizAttempts: [{
+    courseId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Course'
+    },
+    courseTitle: String,
+    topic: {
+      type: String,
+      required: true,
+      trim: true
+    },
+    score: {
+      type: Number,
+      required: true,
+      min: 0,
+      max: 100
+    },
+    totalQuestions: {
+      type: Number,
+      default: 0
+    },
+    correctAnswers: {
+      type: Number,
+      default: 0
+    },
+    timestamp: {
+      type: Date,
+      default: Date.now
+    }
+  }],
+  // Auto Project Builder - track generated projects and completion
+  learningProjects: [{
+    projectId: {
+      type: String,
+      required: true
+    },
+    courseId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Course'
+    },
+    courseTitle: String,
+    topic: {
+      type: String,
+      required: true,
+      trim: true
+    },
+    projectIdea: {
+      type: String,
+      required: true
+    },
+    folderStructure: [{
+      path: String,
+      purpose: String
+    }],
+    starterCode: [{
+      path: String,
+      language: String,
+      content: String
+    }],
+    milestones: [String],
+    tasks: [{
+      taskId: String,
+      title: String,
+      description: String,
+      completed: {
+        type: Boolean,
+        default: false
+      }
+    }],
+    completionPercent: {
+      type: Number,
+      default: 0
+    },
+    status: {
+      type: String,
+      enum: ['not-started', 'in-progress', 'completed'],
+      default: 'not-started'
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now
+    },
+    updatedAt: {
+      type: Date,
+      default: Date.now
+    }
+  }],
   // Cached Learning Persona
   learningPersona: {
     type: {

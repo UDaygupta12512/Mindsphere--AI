@@ -22,6 +22,7 @@ const Header: React.FC<HeaderProps> = ({ onNavigate, currentView, user, onAuthCl
     { id: 'dashboard', label: 'Dashboard' },
     { id: 'create', label: 'Create Course' },
     { id: 'analytics', label: 'Analytics' },
+    { id: 'settings', label: 'Settings' },
     { id: 'chatbot', label: 'AI Tutor' },
   ];
 
@@ -39,20 +40,22 @@ const Header: React.FC<HeaderProps> = ({ onNavigate, currentView, user, onAuthCl
           </div>
 
           {/* Desktop Navigation */}
-          <nav className="hidden md:flex items-center space-x-8">
-            {navItems.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => onNavigate(item.id)}
-                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                  currentView === item.id
-                    ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/30 dark:text-blue-400'
-                    : 'text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-50 dark:hover:bg-gray-800'
-                }`}
-              >
-                {item.label}
-              </button>
-            ))}
+          <nav className="hidden md:flex items-center gap-4 flex-1 justify-end min-w-0">
+            <div className="flex items-center gap-2 lg:gap-4 xl:gap-6 flex-nowrap overflow-x-auto pr-2">
+              {navItems.map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => onNavigate(item.id)}
+                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors whitespace-nowrap ${
+                    currentView === item.id
+                      ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/30 dark:text-blue-400'
+                      : 'text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-50 dark:hover:bg-gray-800'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
 
             {/* Dark Mode Toggle */}
             <button

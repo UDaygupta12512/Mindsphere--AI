@@ -63,7 +63,12 @@ const courseEnvelopeSchema = {
     category: { type: 'string' },
     level: { type: 'string' },
     topics: { type: 'array' },
+    whatYouLearn: { type: 'array' },
+    requirements: { type: 'array' },
     lessons: { type: 'array' },
+    notes: { type: 'array' },
+    insights: { type: 'array' },
+    flashcards: { type: 'array' },
     quizQuestions: {
       type: 'array',
       items: quizItemSchema
@@ -546,165 +551,202 @@ export const initializeGemini = () => {
   }
 };
 
+const toCleanStringArray = (value, minItems = 0, maxItems = 8) => {
+  const asArray = Array.isArray(value) ? value : typeof value === 'string' ? value.split(/\n|,|•|-/) : [];
+  const cleaned = asArray
+    .map((item) => (typeof item === 'string' ? item.trim() : ''))
+    .filter((item) => item.length > 0);
+  if (cleaned.length >= minItems) {
+    return cleaned.slice(0, maxItems);
+  }
+  return cleaned;
+};
+
+const normalizeCourseInsights = (insights, notes, topics) => {
+  const cleaned = (Array.isArray(insights) ? insights : [])
+    .map((insight) => ({
+      title: typeof insight?.title === 'string' ? insight.title.trim() : '',
+      whyItMatters: typeof insight?.whyItMatters === 'string' ? insight.whyItMatters.trim() : '',
+      applyItToday: typeof insight?.applyItToday === 'string' ? insight.applyItToday.trim() : '',
+      successMetric: typeof insight?.successMetric === 'string' ? insight.successMetric.trim() : '',
+      relatedTopics: toCleanStringArray(insight?.relatedTopics, 0, 4)
+    }))
+    .filter((insight) => insight.title && insight.whyItMatters && insight.applyItToday && insight.successMetric);
+
+  if (cleaned.length > 0) {
+    return cleaned.slice(0, 6);
+  }
+
+  const noteFallback = (Array.isArray(notes) ? notes : [])
+    .slice(0, 4)
+    .map((note, index) => {
+      const bullet = Array.isArray(note?.summary) ? note.summary[0] : '';
+      const relatedTopics = toCleanStringArray(note?.topics, 0, 3);
+      return {
+        title: typeof note?.title === 'string' && note.title.trim().length > 0 ? note.title.trim() : `Insight ${index + 1}`,
+        whyItMatters: bullet || `Understanding this concept builds stronger fundamentals in ${relatedTopics[0] || topics[0] || 'the course'}.`,
+        applyItToday: `Write a short explanation and one real-world example for "${typeof note?.title === 'string' ? note.title.trim() : `Insight ${index + 1}`}".`,
+        successMetric: 'Can explain the concept in 60 seconds without notes.',
+        relatedTopics
+      };
+    });
+
+  if (noteFallback.length > 0) {
+    return noteFallback;
+  }
+
+  return [
+    {
+      title: 'Core Foundations',
+      whyItMatters: 'Strong fundamentals help you retain advanced material faster.',
+      applyItToday: 'Summarize one core concept in your own words.',
+      successMetric: 'Can recall 3 key ideas from memory.',
+      relatedTopics: toCleanStringArray(topics, 0, 3)
+    }
+  ];
+};
+
+const normalizeGeneratedCourseContent = (raw, courseTitle) => {
+  const topics = toCleanStringArray(raw?.topics, 3, 8);
+
+  const notes = (Array.isArray(raw?.notes) ? raw.notes : [])
+    .map((note, index) => {
+      const summary = Array.isArray(note?.summary)
+        ? toCleanStringArray(note.summary, 0, 6)
+        : toCleanStringArray(typeof note?.summary === 'string' ? note.summary : note?.content, 0, 6);
+      return {
+        title: typeof note?.title === 'string' && note.title.trim().length > 0 ? note.title.trim() : `Section ${index + 1}`,
+        summary: summary.length > 0 ? summary : ['Review the lesson and capture the core takeaway in one sentence.'],
+        topics: toCleanStringArray(note?.topics, 0, 4)
+      };
+    })
+    .filter((note) => note.title && note.summary.length > 0);
+
+  return {
+    summary: typeof raw?.summary === 'string' && raw.summary.trim().length > 0
+      ? raw.summary.trim()
+      : `This course helps you build practical understanding in ${courseTitle}.`,
+    category: typeof raw?.category === 'string' && raw.category.trim().length > 0 ? raw.category.trim() : 'General',
+    level: ['Beginner', 'Intermediate', 'Advanced'].includes(raw?.level) ? raw.level : 'Intermediate',
+    topics: topics.length > 0 ? topics : ['Learning', 'Practice', 'Application'],
+    whatYouLearn: toCleanStringArray(raw?.whatYouLearn, 0, 8),
+    requirements: toCleanStringArray(raw?.requirements, 0, 6),
+    lessons: Array.isArray(raw?.lessons) ? raw.lessons : [],
+    quizQuestions: Array.isArray(raw?.quizQuestions) ? raw.quizQuestions : [],
+    flashcards: Array.isArray(raw?.flashcards) ? raw.flashcards : [],
+    notes: notes.length > 0 ? notes : [
+      {
+        title: 'Course Overview',
+        summary: ['Understand the main goals of this course.', 'Identify the top topics to focus on first.'],
+        topics: topics.slice(0, 3)
+      }
+    ],
+    insights: normalizeCourseInsights(raw?.insights, notes, topics)
+  };
+};
+
 export const generateCourseContent = async (title, sourceType, source) => {
   if (geminiApiKeys.length === 0 && !openRouterApiKey) {
     throw new Error('AI system is not initialized. Please check your API keys.');
   }
 
-  let prompt;
-  if (sourceType === 'pdf') {
-    prompt = `You are an expert educational content creator. Analyze the following PDF content and generate a course:
+  const sourceContext = sourceType === 'pdf'
+    ? `Source Type: PDF\nExtracted Content: ${source}`
+    : `Source Type: ${sourceType}\nSource Reference: ${source}`;
 
-Title: ${title}
-Source Type: PDF
-PDF Content: ${source}
+  const prompt = `You are an expert curriculum architect and learning scientist.
+Generate premium, heavily engaging, and profound learning content that is specific, practical, and highly optimized for retention.
 
-Instructions:
-1. Generate a brief summary (2-3 sentences).
-2. Identify the category and level (Beginner, Intermediate, or Advanced).
-3. List 4-6 key topics covered.
-4. Create 8-12 comprehensive lessons (title, description, duration, detailed content with at least 4-5 paragraphs each).
-5. Generate exactly 15-20 multiple-choice questions (MCQ) based on the PDF content. For each question:
-  - Provide 4 options (A, B, C, D).
-  - IMPORTANT: Randomly vary the position of the correct answer (sometimes A, sometimes B, C, or D) to avoid predictable patterns.
-  - Specify the correct answer.
-  - For each incorrect option (A, B, C, D), provide a detailed, non-empty explanation of why it is incorrect. Do NOT leave any explanation blank or generic. Each explanation must be specific to the option and the question.
-  - For the correct answer, provide a detailed, non-empty explanation of why it is correct. The explanation must clearly reference the question and the options, and explain why this answer is correct compared to the others. Do NOT leave this blank or generic.
-  - Do NOT regenerate questions inside your response. If an explanation is missing, include a complete explanation for that option.
-  - Indicate the difficulty (easy, medium, or hard).
-6. Generate 15-20 flashcards (front, back, difficulty) covering all key concepts.
-7. Create 5-8 high-quality notes sections. For each note:
-  - Provide a clear, concise headline (title) for the note. This will be shown as a clickable/expandable headline in the UI.
-  - Provide a crisp summary (4-5 bullet points) for the note. Each bullet should be a key fact, insight, or takeaway from the section. Do NOT generate a comprehensive explanation or details at this stage.
-  - Each note should be based on a key concept or section from the PDF.
-  - Each note should be based on a key concept or section from the PDF.
+Course Title: ${title}
+${sourceContext}
 
-IMPORTANT: Return ONLY valid JSON wrapped in a single fenced code block labelled \"json\" (i.e. \`\`\`json ... \`\`\`). For any code samples inside string fields, replace newlines with the two-character sequence \\\"\\n\\\" and escape double quotes as \\\"\\\".
+Requirements:
+1. Summary: 2-3 concise sentences with concrete outcomes.
+2. Category and level: choose one of Beginner, Intermediate, Advanced.
+3. Topics: 5-8 focused topics.
+4. WhatYouLearn: 5-8 measurable outcomes phrased as "You will be able to...".
+5. Requirements: 3-6 realistic prerequisites or setup needs.
+6. Lessons: 8-12 logically sequenced lessons with title, short description, duration, and rich, detailed content (minimum 4 paragraphs each, including analogies and clear examples).
+7. QuizQuestions: 15-20 MCQs.
+   - Use 4 options each.
+   - Vary correct option position across A/B/C/D.
+   - Always include explanations for A, B, C, D, plus correctExplanation.
+8. Flashcards: 15-20 cards for quick recall. Use spaced-repetition friendly questions on the front and concise, definitive answers on the back.
+9. Notes: 6-10 highly detailed notes.
+   - title: concise section title highlighting the core concept.
+   - summary: array of 4-6 high-quality bullet insights. Include at least one real-world analogy and one common pitfall. Do NOT use long paragraphs.
+   - topics: related topics array.
+10. Insights: 4-6 strategic, deep-dive insights for learners with this exact shape:
+   - title: a catchy, insight-driven title.
+   - whyItMatters: the deep psychological or technical reason this is crucial (2-3 sentences).
+   - applyItToday: a step-by-step 30-minute actionable exercise.
+   - successMetric: how the user will know they succeeded (a measurable KPI).
+   - relatedTopics (array)
 
-Return the response as a valid JSON object with this exact structure:
+Output rules:
+- Return ONLY valid JSON. Do not include markdown fences.
+- Do not include comments inside JSON.
+- Keep all fields present, even if arrays are empty.
+
+JSON shape:
 {
-  \"summary\": \"string\",
-  \"category\": \"string\",
-  \"level\": \"Beginner|Intermediate|Advanced\",
-  \"topics\": [\"string\"],
-  \"lessons\": [
+  "summary": "string",
+  "category": "string",
+  "level": "Beginner|Intermediate|Advanced",
+  "topics": ["string"],
+  "whatYouLearn": ["string"],
+  "requirements": ["string"],
+  "lessons": [
     {
-      \"title\": \"string\",
-      \"description\": \"string\",
-      \"duration\": \"string\",
-      \"content\": \"string\",
-      \"order\": number
+      "title": "string",
+      "description": "string",
+      "duration": "string",
+      "content": "string",
+      "order": 1
     }
   ],
-  \"quizQuestions\": [
+  "quizQuestions": [
     {
-      \"type\": \"multiple-choice\",
-      \"question\": \"string\",
-      \"options\": [\"string\", \"string\", \"string\", \"string\"],
-      \"correctAnswer\": \"string\",
-      \"explanations\": {
-        \"A\": \"string\",
-        \"B\": \"string\",
-        \"C\": \"string\",
-        \"D\": \"string\"
+      "type": "multiple-choice",
+      "question": "string",
+      "options": ["string", "string", "string", "string"],
+      "correctAnswer": "A|B|C|D",
+      "explanations": {
+        "A": "string",
+        "B": "string",
+        "C": "string",
+        "D": "string"
       },
-      \"correctExplanation\": \"string\",
-      \"difficulty\": \"easy|medium|hard\"
+      "correctExplanation": "string",
+      "difficulty": "easy|medium|hard"
     }
   ],
-  \"flashcards\": [
+  "flashcards": [
     {
-      \"front\": \"string\",
-      \"back\": \"string\",
-      \"difficulty\": \"easy|medium|hard\"
+      "front": "string",
+      "back": "string",
+      "difficulty": "easy|medium|hard"
     }
   ],
-  \"notes\": [
+  "notes": [
     {
-      \"title\": \"string\", // headline for the note
-      \"summary\": \"string\", // crisp summary for the note (4-5 bullet points)
-      \"topics\": [\"string\"]
+      "title": "string",
+      "summary": ["string", "string"],
+      "topics": ["string"]
+    }
+  ],
+  "insights": [
+    {
+      "title": "string",
+      "whyItMatters": "string",
+      "applyItToday": "string",
+      "successMetric": "string",
+      "relatedTopics": ["string"]
     }
   ]
 }`;
-  } else {
-    prompt = `You are an expert educational content creator. Create a comprehensive course structure based on the following:
-
-Title: ${title}
-Source Type: ${sourceType}
-Source: ${source}
-
-Generate a detailed course with:
-1. A brief summary (2-3 sentences)
-2. Category (e.g., Programming, Data Science, Business, Design, etc.)
-3. Level (Beginner, Intermediate, or Advanced)
-4. 4-6 key topics covered
-5. 8-12 comprehensive lessons with:
-   - Title
-   - Description (2-3 sentences)
-   - Duration (e.g., "15 min", "30 min")
-   - Detailed content (4-5 paragraphs with examples and explanations)
-6. 15-20 quiz questions with:
-   - Question text
-   - Type (multiple-choice, true-false, or fill-blank)
-   - For multiple-choice questions: randomly vary the position of the correct answer (sometimes A, sometimes B, C, or D) to avoid predictable patterns
-   - Options (for multiple-choice)
-   - Correct answer
-   - Detailed explanation of why the answer is correct
-   - Difficulty (easy, medium, or hard)
-7. 15-20 flashcards with:
-   - Front (question or term)
-   - Back (answer or definition)
-   - Difficulty level
-8. 5-8 comprehensive notes with:
-   - Title
-   - Content (detailed explanation with key points)
-   - Related topics
-
-Return the response as a valid JSON object with this exact structure:
-{
-  \"summary\": \"string\",
-  \"category\": \"string\",
-  \"level\": \"Beginner|Intermediate|Advanced\",
-  \"topics\": [\"string\"],
-  \"lessons\": [
-    {
-      \"title\": \"string\",
-      \"description\": \"string\",
-      \"duration\": \"string\",
-      \"content\": \"string\",
-      \"order\": number
-    }
-  ],
-  \"quizQuestions\": [
-    {
-      \"type\": \"multiple-choice|true-false|fill-blank\",
-      \"question\": \"string\",
-      \"options\": [\"string\"] or null,
-      \"correctAnswer\": \"string\",
-      \"explanation\": \"string\",
-      \"difficulty\": \"easy|medium|hard\"
-    }
-  ],
-  \"flashcards\": [
-    {
-      \"front\": \"string\",
-      \"back\": \"string\",
-      \"difficulty\": \"easy|medium|hard\"
-    }
-  ],
-  \"notes\": [
-    {
-      \"title\": \"string\",
-      \"content\": \"string\",
-      \"topics\": [\"string\"]
-    }
-  ]
-}`;
-  }
 
   try {
-    // Try Gemini first, then fallback to OpenRouter
     let text;
     if (geminiApiKeys.length > 0) {
       text = await makeGeminiCallWithRotation(prompt);
@@ -713,64 +755,77 @@ Return the response as a valid JSON object with this exact structure:
     }
 
     try {
-      // Use safe parser that extracts/cleans JSON-like content
       const parsed = parseAiJsonSafely(text);
-      // Validate parsed output against course schema (if possible)
-      try {
-        const valid = ajv.validate(courseEnvelopeSchema, parsed);
-        if (!valid) {
-          console.error('Course validation failed:', ajv.errors);
-          throw new Error('Course schema validation failed');
-        }
-      } catch (validationErr) {
-        console.error('Validation error for course content:', validationErr);
-        console.error('Parsed preview:', JSON.stringify(parsed).substring(0, 500));
-        throw validationErr;
+
+      const valid = ajv.validate(courseEnvelopeSchema, parsed);
+      if (!valid) {
+        console.warn('Course validation warning:', ajv.errors);
       }
-      return parsed;
+
+      return normalizeGeneratedCourseContent(parsed, title);
     } catch (parseError) {
       console.error('Failed to parse/validate AI response in generateCourseContent:', parseError);
       console.error('Response preview (first 500 chars):', (text || '').substring(0, 500));
-      // Return a fallback response structure
-      return {
-        summary: "A comprehensive course generated from the content provided.",
-        category: "General",
-        level: "Intermediate",
-        topics: ["Learning", "Education"],
+
+      return normalizeGeneratedCourseContent({
+        summary: 'A comprehensive course generated from the content provided.',
+        category: 'General',
+        level: 'Intermediate',
+        topics: ['Learning', 'Education', 'Practice'],
+        whatYouLearn: [
+          'You will be able to explain the core concepts clearly.',
+          'You will be able to apply ideas in practical scenarios.'
+        ],
+        requirements: ['Curiosity to learn and practice consistently.'],
         lessons: [
           {
-            title: "Introduction",
-            description: "Introduction to the course content",
-            duration: "1 hour",
-            content: "This lesson provides an overview of the main topics covered.",
+            title: 'Introduction',
+            description: 'Introduction to the course content',
+            duration: '1 hour',
+            content: 'This lesson provides an overview of the main topics covered.',
             order: 1
           }
         ],
         quizQuestions: [
           {
-            type: "multiple-choice",
-            question: "What is the main focus of this course?",
-            options: ["Learning new concepts", "Testing knowledge", "Building skills", "All of the above"],
-            correctAnswer: "D",
-            correctExplanation: "This course focuses on comprehensive learning including concepts, testing, and skill building.",
-            difficulty: "easy"
+            type: 'multiple-choice',
+            question: 'What is the main focus of this course?',
+            options: ['Learning new concepts', 'Testing knowledge', 'Building skills', 'All of the above'],
+            correctAnswer: 'D',
+            correctExplanation: 'This course combines concept learning, practice, and assessment.',
+            explanations: {
+              A: 'Learning concepts is important but not the only focus.',
+              B: 'Assessment is part of learning, not the full picture.',
+              C: 'Skill-building is essential but combined with concepts and testing.',
+              D: 'This option includes all major goals of the course.'
+            },
+            difficulty: 'easy'
           }
         ],
         flashcards: [
           {
-            front: "Key Learning Concept",
-            back: "Important information from the course content",
-            difficulty: "easy"
+            front: 'Key Learning Concept',
+            back: 'Important information from the course content',
+            difficulty: 'easy'
           }
         ],
         notes: [
           {
-            title: "Course Overview",
-            summary: ["Introduction to course topics", "Key concepts to learn"],
-            topics: ["Learning", "Education"]
+            title: 'Course Overview',
+            summary: ['Introduction to course topics', 'Key concepts to learn'],
+            topics: ['Learning', 'Education']
+          }
+        ],
+        insights: [
+          {
+            title: 'Start With Core Concepts',
+            whyItMatters: 'Strong fundamentals improve retention and confidence.',
+            applyItToday: 'Summarize one concept and teach it back in your own words.',
+            successMetric: 'Can explain one key idea without notes in under 60 seconds.',
+            relatedTopics: ['Learning', 'Education']
           }
         ]
-      };
+      }, title);
     }
   } catch (error) {
     console.error('Error generating course content:', error);
@@ -787,6 +842,19 @@ export const generateChatResponse = async (message, coursesContext, history = []
     ? `The user is enrolled in these courses:\n${coursesContext.map(c => `- ${c.title}: ${c.summary || 'No summary'}`).join('\n')}`
     : 'The user has not enrolled in any courses yet.';
 
+  const modeMatch = message.match(/\[Tutor Mode:\s*(coach|socratic|quiz|story)\]/i);
+  const tutorMode = modeMatch ? modeMatch[1].toLowerCase() : 'coach';
+  const personaMatch = message.match(/\[Tutor Persona:\s*([^\]]+)\]/i);
+  const toneMatch = message.match(/\[Tutor Tone:\s*([^\]]+)\]/i);
+  const tutorPersona = personaMatch ? personaMatch[1].toLowerCase().trim() : 'balanced';
+  const tutorTone = toneMatch ? toneMatch[1].toLowerCase().trim() : 'warm';
+  const sanitizedMessage = message
+    .replace(/\[Tutor Mode:[^\]]+\]/i, '')
+    .replace(/\[Tutor Persona:[^\]]+\]/i, '')
+    .replace(/\[Tutor Tone:[^\]]+\]/i, '')
+    .replace(/Student request:/i, '')
+    .trim();
+
   // Build conversation history string for context
   let conversationContext = '';
   if (history && history.length > 0) {
@@ -795,15 +863,48 @@ export const generateChatResponse = async (message, coursesContext, history = []
       recentHistory.map(h => `${h.role === 'user' ? 'Student' : 'Tutor'}: ${h.content}`).join('\n');
   }
 
-  const prompt = `You are a concise AI tutor helping a student learn. ${contextInfo}${conversationContext}
+  const modeInstruction = tutorMode === 'quiz'
+    ? 'Quiz mode: ask exactly one thought-provoking question at a time. Wait for the student answer, then grade it enthusiastically, award imaginary XP points organically in text, and explain briefly.'
+    : tutorMode === 'socratic'
+      ? 'Socratic mode: guide with 2-4 short probing questions before giving the final answer. Keep responses highly interactive and encouraging.'
+      : tutorMode === 'story'
+        ? 'Story mode: write a short 2-4 paragraph story with a clear beginning, tension, and resolution. Include a named character, a real-world setting, and end with 1-2 explicit learning takeaways.'
+        : 'Coach mode: provide concise, practical steps, use inspiring language, and set one quick gamified practice task (e.g., "Quest: Try this out!").';
 
-Student's question: ${message}
+  const personaInstructionMap = {
+    storyteller: 'Lean into narrative and metaphor. Use characters and a clear arc to teach the concept.',
+    strategist: 'Prioritize actionable steps, checklists, and sequencing. Keep it results-oriented.',
+    analyst: 'Use precise reasoning, definitions, and structured breakdowns. Be exact and logical.',
+    balanced: 'Balance clarity and encouragement with concise structure.'
+  };
 
-IMPORTANT: Provide a SHORT, DIRECT answer (2-4 sentences max).
-- Answer the question directly and concisely
-- No lengthy explanations or extra details unless specifically asked
-- If the question relates to their enrolled courses, mention it briefly
-- Be clear and to the point`;
+  const toneInstructionMap = {
+    warm: 'Use supportive, encouraging language and gentle guidance.',
+    crisp: 'Be direct, minimal, and efficient with words.',
+    playful: 'Use light, fun phrasing and positive energy without being silly.'
+  };
+
+  const personaInstruction = personaInstructionMap[tutorPersona] || personaInstructionMap.balanced;
+  const toneInstruction = toneInstructionMap[tutorTone] || toneInstructionMap.warm;
+
+  const prompt = `You are the "Mindsphere AI Tutor", an elite, empathetic, and gamified mentor helping a student master concepts.
+${contextInfo}${conversationContext}
+
+Tutor mode: ${tutorMode}
+Mode instruction: ${modeInstruction}
+Tutor persona: ${tutorPersona}
+Persona instruction: ${personaInstruction}
+Tutor tone: ${tutorTone}
+Tone instruction: ${toneInstruction}
+
+Student's question: ${sanitizedMessage}
+
+Output style:
+- Adopt a warm, encouraging, and slightly playful mentor persona. Use gamified terminology lightly (like "Leveling up", "Quest", "XP").
+- Keep answers concise, visually structured with markdown (bolding, lists), and highly engaging.
+- Connect answers to the student's enrolled courses if relevant.
+- Always end with ONE actionable "Mini-Quest" or next step to keep momentum high.
+- Avoid long walls of text. Be punchy and impactful.`;
 
   try {
     // Try Gemini first since it's more reliable for chat

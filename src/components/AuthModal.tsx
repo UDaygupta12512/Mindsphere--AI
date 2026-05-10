@@ -1,4 +1,4 @@
-import React, { useState } from 'react'; 
+import React, { useState, useEffect } from 'react'; 
 import { X } from 'lucide-react';
 import { authApi, setToken } from '../lib/api';
 
@@ -20,6 +20,21 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuth }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [successMessage, setSuccessMessage] = useState('');
+  const [rememberMe, setRememberMe] = useState(() => {
+    return localStorage.getItem('ms-remember-me') === 'true';
+  });
+
+  useEffect(() => {
+    const savedEmail = localStorage.getItem('ms-remember-email');
+    const savedPassword = localStorage.getItem('ms-remember-password');
+    if (savedEmail || savedPassword) {
+      setFormData(prev => ({
+        ...prev,
+        email: savedEmail || prev.email,
+        password: savedPassword || prev.password
+      }));
+    }
+  }, []);
 
   if (!isOpen) return null;
 
@@ -126,6 +141,15 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuth }) => {
           email: trimmedEmail,
           password: formData.password
         });
+        if (rememberMe) {
+          localStorage.setItem('ms-remember-email', trimmedEmail);
+          localStorage.setItem('ms-remember-password', formData.password);
+          localStorage.setItem('ms-remember-me', 'true');
+        } else {
+          localStorage.removeItem('ms-remember-email');
+          localStorage.removeItem('ms-remember-password');
+          localStorage.setItem('ms-remember-me', 'false');
+        }
         setToken(response.token);
         onAuth(response.user);
         onClose();
@@ -231,6 +255,18 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuth }) => {
                 />
                 {errors.password && <p className="text-red-500 text-sm mt-1">{errors.password}</p>}
               </div>
+            )}
+
+            {mode === 'login' && (
+              <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300"
+                />
+                Remember my email and password
+              </label>
             )}
 
             {mode === 'reset' && (

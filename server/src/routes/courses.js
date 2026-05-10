@@ -4,7 +4,7 @@ import express from 'express';
 import Course from '../models/Course.js';
 import User from '../models/User.js';
 import { authMiddleware } from '../middleware/auth.js';
-import { generateCourseContent, generateComprehensiveNote, generateAdditionalQuizQuestions } from '../services/geminiService.js';
+import { generateCourseContent, generateComprehensiveNote, generateAdditionalQuizQuestions, generateAIContent } from '../services/geminiService.js';
 import { getYoutubeVideosForLessons } from '../services/youtubeService.js';
 import { getYoutubeVideosForLessonsNoKey } from '../services/youtubeServiceNoKey.js';
 
@@ -12,6 +12,133 @@ const router = express.Router();
 
 // All routes require authentication
 router.use(authMiddleware);
+
+const toSummaryArray = (value) => {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => (typeof item === 'string' ? item.trim() : ''))
+      .filter(Boolean)
+      .slice(0, 6);
+  }
+
+  if (typeof value === 'string') {
+    return value
+      .split(/\n|•|-/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .slice(0, 6);
+  }
+
+  return [];
+};
+
+const normalizeInsights = (insights, notes, topics) => {
+  const cleaned = (Array.isArray(insights) ? insights : [])
+    .map((insight) => ({
+      title: typeof insight?.title === 'string' ? insight.title.trim() : '',
+      whyItMatters: typeof insight?.whyItMatters === 'string' ? insight.whyItMatters.trim() : '',
+      applyItToday: typeof insight?.applyItToday === 'string' ? insight.applyItToday.trim() : '',
+      successMetric: typeof insight?.successMetric === 'string' ? insight.successMetric.trim() : '',
+      relatedTopics: Array.isArray(insight?.relatedTopics) ? insight.relatedTopics.filter(Boolean).slice(0, 4) : []
+    }))
+    .filter((insight) => insight.title && insight.whyItMatters && insight.applyItToday && insight.successMetric);
+
+  if (cleaned.length > 0) {
+    return cleaned.slice(0, 6);
+  }
+
+  return (notes || []).slice(0, 3).map((note, index) => ({
+    title: note.title || `Insight ${index + 1}`,
+    whyItMatters: note.summary?.[0] || `This concept supports your understanding of ${topics?.[0] || 'the course'}.`,
+    applyItToday: `Write one real-world example for "${note.title || `Insight ${index + 1}`}".`,
+    successMetric: 'Can explain this concept in under 60 seconds.',
+    relatedTopics: Array.isArray(note.topics) ? note.topics.slice(0, 3) : []
+  }));
+};
+
+// POST /api/courses/:courseId/explain-back/evaluate - Evaluate user explanation against original concept
+router.post('/:courseId/explain-back/evaluate', async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    const { conceptTitle, originalContent, userExplanation } = req.body;
+
+    if (!conceptTitle || !originalContent || !userExplanation) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: conceptTitle, originalContent, userExplanation'
+      });
+    }
+
+    const course = await Course.findOne({ _id: courseId, user: req.userId }).select('title');
+    if (!course) {
+      return res.status(404).json({ success: false, error: 'Course not found' });
+    }
+
+    const prompt = `You are an expert evaluator for student understanding.
+Compare the student's explanation with the original concept.
+
+Course: ${course.title}
+Concept title: ${conceptTitle}
+
+Original concept:
+${originalContent}
+
+Student explanation:
+${userExplanation}
+
+Return ONLY valid JSON with this exact shape:
+{
+  "score": 0,
+  "missingPoints": ["point 1", "point 2"],
+  "strengths": ["strength 1", "strength 2"],
+  "feedback": "short paragraph",
+  "improvementTip": "one actionable tip"
+}
+
+Rules:
+- score must be an integer from 0 to 10.
+- missingPoints should contain 2-5 concrete missing ideas.
+- strengths should contain 1-3 concise positives.
+- feedback should be constructive and specific.
+- Do not include markdown, code fences, or extra keys.`;
+
+    let evaluation;
+    try {
+      const aiResponse = await generateAIContent(prompt, true);
+      if (typeof aiResponse === 'string') {
+        evaluation = JSON.parse(aiResponse);
+      } else {
+        evaluation = aiResponse;
+      }
+    } catch (error) {
+      console.error('Explain-back evaluation parse error:', error);
+      evaluation = null;
+    }
+
+    if (!evaluation || typeof evaluation !== 'object') {
+      return res.status(500).json({ success: false, error: 'Failed to evaluate explanation' });
+    }
+
+    const safeScore = Math.max(0, Math.min(10, parseInt(evaluation.score, 10) || 0));
+
+    res.json({
+      success: true,
+      evaluation: {
+        score: safeScore,
+        missingPoints: Array.isArray(evaluation.missingPoints) ? evaluation.missingPoints : [],
+        strengths: Array.isArray(evaluation.strengths) ? evaluation.strengths : [],
+        feedback: typeof evaluation.feedback === 'string' ? evaluation.feedback : 'Good attempt. Keep refining your explanation.',
+        improvementTip: typeof evaluation.improvementTip === 'string' ? evaluation.improvementTip : 'Focus on key concepts and define them clearly in your own words.'
+      }
+    });
+  } catch (error) {
+    console.error('Explain-back evaluation error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to evaluate explanation'
+    });
+  }
+});
 
 // PATCH /api/courses/:courseId/quizzes/:quizIndex/complete - Mark quiz as completed with score
 router.patch('/:courseId/quizzes/:quizIndex/complete', async (req, res) => {
@@ -288,8 +415,8 @@ router.post('/', async (req, res) => {
         studentsEnrolled: 0,
         instructor: 'AI Generated',
         topics: generatedContent.topics || [],
-        whatYouLearn: [],
-        requirements: [],
+        whatYouLearn: Array.isArray(generatedContent.whatYouLearn) ? generatedContent.whatYouLearn : [],
+        requirements: Array.isArray(generatedContent.requirements) ? generatedContent.requirements : [],
         lessons: (generatedContent.lessons || []).map((lesson, index) => ({
           ...lesson,
           isCompleted: false,
@@ -298,24 +425,14 @@ router.post('/', async (req, res) => {
           transcript: ''
         })),
         notes: (generatedContent.notes || []).map(note => {
-          // Ensure summary is an array of bullet points
-          let summaryArray = [];
-          if (Array.isArray(note.summary)) {
-            summaryArray = note.summary;
-          } else if (typeof note.summary === 'string') {
-            // Split by newlines, dashes, or bullet points and clean up
-            summaryArray = note.summary
-              .split(/[\n•\-]/)
-              .map(s => s.trim())
-              .filter(s => s.length > 0);
-          }
-          
+          const summaryArray = toSummaryArray(note.summary || note.content);
           return {
             title: note.title,
-            summary: summaryArray,
+            summary: summaryArray.length > 0 ? summaryArray : ['Review this section and summarize the key takeaway.'],
             topics: note.topics || []
           };
         }),
+        insights: normalizeInsights(generatedContent.insights, generatedContent.notes, generatedContent.topics),
         quizzes: generatedContent.quizQuestions && generatedContent.quizQuestions.length > 0 ? [{
           title: `${courseTitle} Quiz`,
           questions: generatedContent.quizQuestions.map(q => {
@@ -450,3 +567,4 @@ router.patch('/:id', async (req, res) => {
 
 export default router;
  
+

@@ -86,7 +86,7 @@ const LearningPathModal: React.FC<LearningPathModalProps> = ({
                 <p className="text-blue-100 text-sm">{courseTitle}</p>
               </div>
             </div>
-            <button onClick={onClose} className="p-2 hover:bg-white/20 rounded-lg transition-colors">
+            <button aria-label="Close learning path modal" title="Close" onClick={onClose} className="p-2 hover:bg-white/20 rounded-lg transition-colors">
               <X className="h-5 w-5" />
             </button>
           </div>
@@ -180,7 +180,7 @@ const LearningPathModal: React.FC<LearningPathModalProps> = ({
               <Loader2 className="h-12 w-12 text-blue-600 animate-spin mx-auto mb-4" />
               <h3 className="text-lg font-semibold text-gray-900 mb-2">Creating Your Plan...</h3>
               <p className="text-gray-600 text-sm">
-                Our AI is analyzing your course and designing the perfect study schedule
+                Learning OS is analyzing your progress signals and designing today&apos;s best schedule
               </p>
             </div>
           )}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react'; 
+import React, { useState, useEffect } from 'react'; 
 import { authApi, setToken } from '../lib/api';
 
 const AuthPage: React.FC = () => {
@@ -11,6 +11,21 @@ const AuthPage: React.FC = () => {
   });
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
+  const [rememberMe, setRememberMe] = useState(() => {
+    return localStorage.getItem('ms-remember-me') === 'true';
+  });
+
+  useEffect(() => {
+    const savedEmail = localStorage.getItem('ms-remember-email');
+    const savedPassword = localStorage.getItem('ms-remember-password');
+    if (savedEmail || savedPassword) {
+      setFormData(prev => ({
+        ...prev,
+        email: savedEmail || prev.email,
+        password: savedPassword || prev.password
+      }));
+    }
+  }, []);
 
   const validateForm = () => {
     const newErrors: { [key: string]: string } = {};
@@ -65,6 +80,18 @@ const AuthPage: React.FC = () => {
 
       // Store token
       setToken(response.token);
+
+      if (!isSignUp) {
+        if (rememberMe) {
+          localStorage.setItem('ms-remember-email', formData.email);
+          localStorage.setItem('ms-remember-password', formData.password);
+          localStorage.setItem('ms-remember-me', 'true');
+        } else {
+          localStorage.removeItem('ms-remember-email');
+          localStorage.removeItem('ms-remember-password');
+          localStorage.setItem('ms-remember-me', 'false');
+        }
+      }
 
       // Redirect or handle success
       console.log('Authentication successful:', response);
@@ -180,6 +207,17 @@ const AuthPage: React.FC = () => {
           >
             {isLoading ? 'Processing...' : isSignUp ? 'Sign Up' : 'Login'}
           </button>
+          {!isSignUp && (
+            <label className="flex items-center gap-2 text-sm text-gray-600">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              Remember my email and password
+            </label>
+          )}
         </form>
 
         <div className="mt-4 text-center">

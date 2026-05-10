@@ -19,29 +19,33 @@ export const PointsDisplay: React.FC<PointsDisplayProps> = ({
 
   return (
     <div className="bg-white rounded-lg shadow p-4">
-      <div className="flex items-center justify-between mb-2">
+      <div className="flex items-center justify-between mb-4">
         <div className="flex items-center">
-          <div className="bg-indigo-100 p-2 rounded-full mr-3">
-            <Zap className="w-5 h-5 text-indigo-600" />
+          <div className="bg-gradient-to-br from-yellow-400 to-orange-500 p-2.5 rounded-xl mr-4 shadow-lg shadow-orange-200">
+            <Zap className="w-6 h-6 text-white animate-pulse" />
           </div>
           <div>
-            <h3 className="font-medium text-gray-900">Learning Points</h3>
-            <p className="text-2xl font-bold text-indigo-700">{points.total}</p>
+            <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider">MindSphere XP</h3>
+            <p className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-orange-600 to-purple-600">{points.total}</p>
           </div>
         </div>
         <div className="text-right">
-          <div className="text-sm text-gray-500">Level {points.level}</div>
-          <div className="text-xs text-gray-400">
-            {points.nextLevelPoints - points.total} to next level
+          <div className="inline-flex items-center gap-1 bg-indigo-100 text-indigo-800 px-3 py-1 rounded-full font-bold text-sm mb-1">
+            <Trophy className="w-4 h-4" /> Level {points.level}
+          </div>
+          <div className="text-xs font-semibold text-gray-500">
+            {points.nextLevelPoints - points.total} XP to Level {points.level + 1}
           </div>
         </div>
       </div>
 
-      <div className="w-full bg-gray-200 rounded-full h-2.5 mb-4">
+      <div className="w-full bg-gray-100 rounded-full h-3 mb-4 shadow-inner overflow-hidden relative">
         <div 
-          className="bg-gradient-to-r from-indigo-500 to-purple-600 h-2.5 rounded-full transition-all duration-500 ease-in-out" 
+          className="bg-gradient-to-r from-orange-400 via-pink-500 to-purple-600 h-3 rounded-full transition-all duration-1000 ease-out relative" 
           style={{ width: `${progress}%` }}
-        ></div>
+        >
+          <div className="absolute inset-0 bg-white/20 animate-pulse"></div>
+        </div>
       </div>
 
       {showDetails && (

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { X, Play, Users, BookOpen, Brain, Award } from 'lucide-react';
 
 interface DemoModalProps {
@@ -7,6 +7,9 @@ interface DemoModalProps {
 }
 
 const DemoModal: React.FC<DemoModalProps> = ({ isOpen, onClose }) => {
+  const [showDemoVideo, setShowDemoVideo] = useState(false);
+  const demoVideoUrl = 'https://www.w3schools.com/html/mov_bbb.mp4';
+
   if (!isOpen) return null;
 
   const demoSteps = [
@@ -36,6 +39,27 @@ const DemoModal: React.FC<DemoModalProps> = ({ isOpen, onClose }) => {
     }
   ];
 
+  const exampleCourses = [
+    {
+      title: 'Python for Data Analysis',
+      level: 'Beginner',
+      outcome: ['8 lessons', '12 quizzes', '24 flashcards'],
+      color: 'from-blue-500 to-indigo-500'
+    },
+    {
+      title: 'UI Design Systems',
+      level: 'Intermediate',
+      outcome: ['6 lessons', '9 quizzes', '18 flashcards'],
+      color: 'from-emerald-500 to-teal-500'
+    },
+    {
+      title: 'Machine Learning Basics',
+      level: 'Beginner',
+      outcome: ['10 lessons', '14 quizzes', '30 flashcards'],
+      color: 'from-purple-500 to-pink-500'
+    }
+  ];
+
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
@@ -56,16 +80,51 @@ const DemoModal: React.FC<DemoModalProps> = ({ isOpen, onClose }) => {
 
         {/* Demo Video Section */}
         <div className="p-6 border-b border-gray-200">
-          <div className="relative bg-gradient-to-br from-blue-600 to-purple-600 rounded-2xl overflow-hidden">
-            <div className="aspect-video flex items-center justify-center">
-              <button className="group flex items-center justify-center w-20 h-20 bg-white/20 backdrop-blur-sm rounded-full hover:bg-white/30 transition-all">
-                <Play className="h-8 w-8 text-white ml-1 group-hover:scale-110 transition-transform" />
-              </button>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="relative bg-gradient-to-br from-blue-600 to-purple-600 rounded-2xl overflow-hidden">
+              <div className="aspect-video flex items-center justify-center">
+                {showDemoVideo ? (
+                  <video
+                    className="w-full h-full object-cover"
+                    controls
+                    autoPlay
+                    src={demoVideoUrl}
+                  />
+                ) : (
+                  <button
+                    onClick={() => setShowDemoVideo(true)}
+                    aria-label="Play MindSphere AI demo"
+                    className="group flex items-center justify-center w-20 h-20 bg-white/20 backdrop-blur-sm rounded-full hover:bg-white/30 transition-all"
+                  >
+                    <Play className="h-8 w-8 text-white ml-1 group-hover:scale-110 transition-transform" />
+                  </button>
+                )}
+              </div>
+              <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent"></div>
+              <div className="absolute bottom-4 left-4 text-white">
+                <h3 className="text-lg font-semibold">MindSphere AI Demo</h3>
+                <p className="text-white/80 text-sm">See how AI transforms content into courses</p>
+              </div>
             </div>
-            <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent"></div>
-            <div className="absolute bottom-4 left-4 text-white">
-              <h3 className="text-lg font-semibold">MindSphere AI Demo</h3>
-              <p className="text-white/80 text-sm">See how AI transforms content into courses</p>
+            <div className="rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50 to-indigo-50 p-5">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">MindSphere AI Demo</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Watch the full flow: content intake, AI structuring, and instant learning assets.
+              </p>
+              <ul className="space-y-2 text-sm text-gray-700">
+                <li className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-blue-600" />YouTube or PDF input to lesson blueprint</li>
+                <li className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-blue-600" />Auto quizzes, flashcards, and micro-syllabus</li>
+                <li className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-blue-600" />Analytics + achievements on completion</li>
+              </ul>
+              <div className="mt-4 flex items-center gap-3">
+                <button
+                  onClick={() => setShowDemoVideo(true)}
+                  className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
+                >
+                  Play Demo
+                </button>
+                <span className="text-xs text-gray-500">2 min overview</span>
+              </div>
             </div>
           </div>
         </div>
@@ -99,6 +158,32 @@ const DemoModal: React.FC<DemoModalProps> = ({ isOpen, onClose }) => {
                 </div>
               </div>
             ))}
+          </div>
+
+          {/* Example Courses */}
+          <div className="mt-10">
+            <h3 className="text-xl font-bold text-gray-900 mb-6 text-center">Example Course Outputs</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+              {exampleCourses.map((course, index) => (
+                <div key={index} className="rounded-2xl border border-gray-100 bg-white shadow-sm overflow-hidden">
+                  <div className={`h-24 bg-gradient-to-r ${course.color} p-4 text-white`}>
+                    <p className="text-xs uppercase tracking-widest text-white/80">{course.level}</p>
+                    <p className="text-lg font-semibold">{course.title}</p>
+                  </div>
+                  <div className="p-4">
+                    <p className="text-sm text-gray-600 mb-3">Generated in under 2 minutes</p>
+                    <ul className="space-y-2 text-sm text-gray-700">
+                      {course.outcome.map((item, idx) => (
+                        <li key={idx} className="flex items-center gap-2">
+                          <span className="h-2 w-2 rounded-full bg-blue-600" />
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
 
           {/* Features Highlight */}

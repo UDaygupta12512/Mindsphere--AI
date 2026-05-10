@@ -196,7 +196,9 @@ const GapReportModal: React.FC<GapReportModalProps> = ({
                               <Sparkles className="h-4 w-4" />
                               Example
                             </h4>
-                            <p className="text-sm text-gray-700">{lesson.example}</p>
+                            <p className="text-sm text-gray-700">
+                              {lesson.example?.trim() || `Example coming soon. Try explaining ${lesson.topic} in your own words.`}
+                            </p>
                           </div>
 
                           {/* Practice Question */}
@@ -205,7 +207,9 @@ const GapReportModal: React.FC<GapReportModalProps> = ({
                               <TrendingUp className="h-4 w-4" />
                               Practice Question
                             </h4>
-                            <p className="text-sm text-gray-700 italic">"{lesson.practiceQuestion}"</p>
+                            <p className="text-sm text-gray-700 italic">
+                              "{lesson.practiceQuestion?.trim() || `How would you apply ${lesson.topic} in a real project?`}"
+                            </p>
                           </div>
                         </div>
                       </div>

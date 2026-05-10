@@ -12,6 +12,7 @@ import CourseCatalog from './components/CourseCatalog';
 import CourseDetail from './components/CourseDetail';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
 import ReviewDashboard from './components/ReviewDashboard';
+import SettingsPage from './components/SettingsPage';
 import Features from './components/Features';
 import HowItWorks from './components/HowItWorks';
 import CTASection from './components/CTASection';
@@ -21,15 +22,17 @@ import Footer from './components/Footer';
 import { Course } from './types/course';
 import { User } from './types/auth';
 import { CatalogCourse } from './utils/catalogData';
-import { coursesApi, catalogApi, api, getToken, removeToken, authEvents } from './lib/api';
+import { coursesApi, catalogApi, api, removeToken, authEvents, authApi, setToken } from './lib/api';
 
 function App() {
   const { isDark, toggle: toggleDark } = useDarkMode();
-  const { currentStreak, longestStreak } = useStreak();
+  const { currentStreak: localCurrentStreak, longestStreak: localLongestStreak } = useStreak();
+  const [currentStreak, setCurrentStreak] = useState(localCurrentStreak);
+  const [longestStreak, setLongestStreak] = useState(localLongestStreak);
   // Get initial view from URL hash
   const getViewFromHash = () => {
     const hash = window.location.hash.slice(1); // Remove #
-    const validViews = ['home', 'catalog', 'catalog-detail', 'dashboard', 'create', 'course', 'chatbot', 'analytics', 'review'];
+    const validViews = ['home', 'catalog', 'catalog-detail', 'dashboard', 'create', 'course', 'chatbot', 'analytics', 'review', 'settings'];
     return validViews.includes(hash) ? hash : 'home';
   };
 
@@ -42,17 +45,48 @@ function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [pendingView, setPendingView] = useState<string | null>(null);
 
+  // First-visit behavior: skip tour and let users explore the site immediately
+  useEffect(() => {
+    const firstVisitKey = 'ms-first-visit-complete';
+    const hasVisited = localStorage.getItem(firstVisitKey);
+
+    if (!hasVisited) {
+      localStorage.setItem(firstVisitKey, 'true');
+      localStorage.setItem('ms-tour-skipped', 'true');
+
+      if (!window.location.hash || window.location.hash === '#home') {
+        setCurrentView('catalog');
+        window.history.replaceState({ view: 'catalog' }, '', '#catalog');
+      }
+    }
+  }, []);
+
   // Initialize auth and load user data on app start
   useEffect(() => {
     const initializeApp = async () => {
-      const token = getToken();
-      if (!token) return;
+      const rememberMe = localStorage.getItem('ms-remember-me') === 'true';
+      const savedEmail = localStorage.getItem('ms-remember-email');
+      const savedPassword = localStorage.getItem('ms-remember-password');
+      let authedUser: User | null = null;
+
+      if (rememberMe && savedEmail && savedPassword) {
+        try {
+          const response = await authApi.login({
+            email: savedEmail,
+            password: savedPassword
+          });
+          setToken(response.token);
+          setUser(response.user as User);
+          authedUser = response.user as User;
+        } catch (error) {
+          console.error('Auto-login failed:', error);
+        }
+      }
 
       try {
-        // Validate token by fetching user data via API helper (uses correct base URL)
-        const userData = await api.get<User>('/api/auth/me');
-        setUser(userData);
-
+        if (!authedUser) {
+          return;
+        }
         // Load user's courses
         const userCourses = await coursesApi.getAll();
         setCourses(userCourses.map(course => ({
@@ -77,11 +111,20 @@ function App() {
           .filter((id): id is string => id !== undefined);
 
         setEnrolledCourseIds(catalogIds);
+
+        try {
+          const analytics = await api.get<any>('/api/analytics');
+          const overview = analytics?.data?.overview || analytics?.overview;
+          if (overview) {
+            setCurrentStreak(overview.currentStreak || 0);
+            setLongestStreak(overview.longestStreak || 0);
+          }
+        } catch (error) {
+          console.error('Error loading streak analytics:', error);
+        }
       } catch (error) {
-        console.error('Error initializing app:', error);
-        // Clear invalid token
-        removeToken();
-        localStorage.removeItem('edusynth-user');
+        console.error('Error initializing app course data:', error);
+        // Do not clear the token here so the user remains successfully signed in even if the backend fails
       }
     };
 
@@ -138,7 +181,7 @@ function App() {
 
   const handleNavigate = (view: string) => {
     // Require authentication for certain views
-    if (!user && ['dashboard', 'create', 'chatbot', 'analytics', 'review'].includes(view)) {
+    if (!user && ['dashboard', 'create', 'chatbot', 'analytics', 'review', 'settings'].includes(view)) {
       setPendingView(view);
       setIsAuthModalOpen(true);
       return;
@@ -197,6 +240,17 @@ function App() {
         .filter((id): id is string => id !== undefined);
 
       setEnrolledCourseIds(catalogIds);
+
+      try {
+        const analytics = await api.get<any>('/api/analytics');
+        const overview = analytics?.data?.overview || analytics?.overview;
+        if (overview) {
+          setCurrentStreak(overview.currentStreak || 0);
+          setLongestStreak(overview.longestStreak || 0);
+        }
+      } catch (error) {
+        console.error('Error loading streak analytics:', error);
+      }
     } catch (error) {
       console.error('Error loading courses after auth:', error);
     }
@@ -224,6 +278,16 @@ function App() {
         createdAt: new Date(course.createdAt),
         lastAccessed: course.lastAccessed ? new Date(course.lastAccessed) : undefined
       } as unknown as Course)));
+      try {
+        const analytics = await api.get<any>('/api/analytics');
+        const overview = analytics?.data?.overview || analytics?.overview;
+        if (overview) {
+          setCurrentStreak(overview.currentStreak || 0);
+          setLongestStreak(overview.longestStreak || 0);
+        }
+      } catch (error) {
+        console.error('Error refreshing streak analytics:', error);
+      }
     } catch (error) {
       console.error('Error refreshing courses:', error);
     }
@@ -281,6 +345,37 @@ function App() {
     }
 
     try {
+      const pendingCourse: Course = {
+        _id: `pending-${catalogCourse.id}`,
+        id: `pending-${catalogCourse.id}`,
+        title: catalogCourse.title,
+        description: catalogCourse.description || 'Generating your course content... ',
+        sourceType: 'catalog',
+        createdAt: new Date(),
+        duration: catalogCourse.duration || '0h',
+        topics: catalogCourse.topics || [],
+        progress: 0,
+        notes: [],
+        quizzes: [],
+        flashcards: [],
+        summary: '',
+        lessons: [],
+        instructor: catalogCourse.instructor || 'AI Generated',
+        rating: catalogCourse.rating || 0,
+        studentsEnrolled: catalogCourse.studentsEnrolled || 0,
+        level: catalogCourse.level || 'Beginner',
+        category: catalogCourse.category || 'General',
+        thumbnail: catalogCourse.thumbnail || '',
+        totalLessons: catalogCourse.totalLessons || 0,
+        completedLessons: 0,
+        certificate: false,
+        lastAccessed: new Date()
+      } as Course;
+
+      setSelectedCourse(pendingCourse);
+      setCurrentView('course');
+      updateUrlHash('course');
+
       const enrolledCourse = await catalogApi.enroll(catalogCourse.id);
 
       const courseWithId: Course = {
@@ -309,12 +404,16 @@ function App() {
 
       // Navigate directly to the enrolled course
       setSelectedCourse(courseWithId);
-      setCurrentView('course');
-      updateUrlHash('course');
+      
+      // Also close auth modal just in case
+      setIsAuthModalOpen(false);
     } catch (error) {
       console.error('Error enrolling in course:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to enroll in course. Please try again.';
       alert(errorMessage);
+      setSelectedCourse(null);
+      setCurrentView('catalog-detail');
+      updateUrlHash('catalog-detail');
     }
   };
 
@@ -380,6 +479,7 @@ function App() {
             courses={courses}
             onSelectCourse={handleSelectCourse}
             onCreateCourse={handleCreateCourse}
+            onNavigate={handleNavigate}
             userName={user?.name}
             currentStreak={currentStreak}
             longestStreak={longestStreak}
@@ -394,7 +494,6 @@ function App() {
             course={selectedCourse}
             onBack={handleBackToDashboard}
             onUpdateCourse={handleUpdateCourse}
-            userName={user?.name}
             refreshCourses={refreshCourses}
           />
         ) : (
@@ -403,6 +502,7 @@ function App() {
             courses={courses}
             onSelectCourse={handleSelectCourse}
             onCreateCourse={handleCreateCourse}
+            onNavigate={handleNavigate}
             userName={user?.name}
             currentStreak={currentStreak}
             longestStreak={longestStreak}
@@ -415,6 +515,8 @@ function App() {
         return <AnalyticsDashboard key={`analytics-${courses.length}-${courses.map(c => c.progress).join('-')}`} onNavigate={handleNavigate} />;
       case 'review':
         return <ReviewDashboard onBack={handleBackToDashboard} />;
+      case 'settings':
+        return <SettingsPage user={user} />;
       default:
         return <Hero onGetStarted={handleGetStarted} />;
     }

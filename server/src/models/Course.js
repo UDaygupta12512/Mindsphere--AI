@@ -35,6 +35,14 @@ const courseNoteSchema = new mongoose.Schema({
   topics: [String]
 }, { _id: false });
 
+const courseInsightSchema = new mongoose.Schema({
+  title: String,
+  whyItMatters: String,
+  applyItToday: String,
+  successMetric: String,
+  relatedTopics: [String]
+}, { _id: false });
+
 const quizQuestionSchema = new mongoose.Schema({
   type: {
     type: String,
@@ -121,6 +129,7 @@ const courseSchema = new mongoose.Schema({
   requirements: [String],
   lessons: [lessonSchema],
   notes: [courseNoteSchema],
+  insights: [courseInsightSchema],
   quizzes: [quizSchema],
   flashcards: [flashcardSchema],
   totalLessons: {

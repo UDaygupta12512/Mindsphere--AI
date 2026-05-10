@@ -492,6 +492,47 @@ const catalogCourses = [
   }
 ];
 
+const toSummaryArray = (value) => {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => (typeof item === 'string' ? item.trim() : ''))
+      .filter(Boolean)
+      .slice(0, 6);
+  }
+  if (typeof value === 'string') {
+    return value
+      .split(/\n|•|-/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .slice(0, 6);
+  }
+  return [];
+};
+
+const normalizeInsights = (insights, notes, topics) => {
+  const cleaned = (Array.isArray(insights) ? insights : [])
+    .map((insight) => ({
+      title: typeof insight?.title === 'string' ? insight.title.trim() : '',
+      whyItMatters: typeof insight?.whyItMatters === 'string' ? insight.whyItMatters.trim() : '',
+      applyItToday: typeof insight?.applyItToday === 'string' ? insight.applyItToday.trim() : '',
+      successMetric: typeof insight?.successMetric === 'string' ? insight.successMetric.trim() : '',
+      relatedTopics: Array.isArray(insight?.relatedTopics) ? insight.relatedTopics.filter(Boolean).slice(0, 4) : []
+    }))
+    .filter((insight) => insight.title && insight.whyItMatters && insight.applyItToday && insight.successMetric);
+
+  if (cleaned.length > 0) {
+    return cleaned.slice(0, 6);
+  }
+
+  return (notes || []).slice(0, 3).map((note, index) => ({
+    title: note.title || `Insight ${index + 1}`,
+    whyItMatters: note.summary?.[0] || `This concept supports your understanding of ${topics?.[0] || 'the course'}.`,
+    applyItToday: `Write one real-world example for "${note.title || `Insight ${index + 1}`}".`,
+    successMetric: 'Can explain this concept in under 60 seconds.',
+    relatedTopics: Array.isArray(note.topics) ? note.topics.slice(0, 3) : []
+  }));
+};
+
 // GET /api/catalog - Get catalog courses
 router.get('/', (req, res) => {
   try {
@@ -581,8 +622,8 @@ router.post('/:id/enroll', authMiddleware, async (req, res) => {
       studentsEnrolled: catalogCourse.studentsEnrolled,
       instructor: catalogCourse.instructor,
       topics: catalogCourse.topics || generatedContent.topics || [],
-      whatYouLearn: catalogCourse.whatYouLearn || [],
-      requirements: catalogCourse.requirements || [],
+      whatYouLearn: catalogCourse.whatYouLearn || generatedContent.whatYouLearn || [],
+      requirements: catalogCourse.requirements || generatedContent.requirements || [],
       
       // Generated content
       lessons: (generatedContent.lessons || []).map((lesson, index) => ({
@@ -593,21 +634,14 @@ router.post('/:id/enroll', authMiddleware, async (req, res) => {
         transcript: ''
       })),
       notes: (generatedContent.notes || []).map(note => {
-        let summaryArray = [];
-        if (Array.isArray(note.summary)) {
-          summaryArray = note.summary;
-        } else if (typeof note.summary === 'string') {
-          summaryArray = note.summary
-            .split(/[\n•\-]/)
-            .map(s => s.trim())
-            .filter(s => s.length > 0);
-        }
+        const summaryArray = toSummaryArray(note.summary || note.content);
         return {
           title: note.title,
-          summary: summaryArray,
+          summary: summaryArray.length > 0 ? summaryArray : ['Review this section and summarize the key takeaway.'],
           topics: note.topics || []
         };
       }),
+      insights: normalizeInsights(generatedContent.insights, generatedContent.notes, generatedContent.topics),
       quizzes: generatedContent.quizQuestions && generatedContent.quizQuestions.length > 0 ? [{
         title: `${catalogCourse.title} Quiz`,
         questions: generatedContent.quizQuestions.map(q => {
@@ -698,3 +732,4 @@ router.post('/:id/enroll', authMiddleware, async (req, res) => {
 
 export default router;
  
+

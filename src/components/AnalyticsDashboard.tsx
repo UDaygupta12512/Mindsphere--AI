@@ -562,41 +562,102 @@ const AnalyticsDashboard: React.FC<{ onNavigate?: (view: string) => void }> = ({
             🎯 Skill Gap Analysis
           </h2>
           {(() => {
-            // Build radar data from course progress — one entry per unique topic
             const topicMap: Record<string, { total: number; count: number }> = {};
             (courseProgress || []).forEach(cp => {
-              // Use course title words as a fallback topic
               const topic = cp.courseTitle.split(/[:\-–]/).map(s => s.trim())[0] || cp.courseTitle;
               if (!topicMap[topic]) topicMap[topic] = { total: 0, count: 0 };
               topicMap[topic].total += cp.progress || 0;
               topicMap[topic].count += 1;
             });
-            // Also blend in mastered / in-progress topics from learningStats
             (learningStats?.topicsMastered || []).forEach(t => {
               if (!topicMap[t]) topicMap[t] = { total: 0, count: 0 };
-              topicMap[t].total += 100; topicMap[t].count += 1;
+              topicMap[t].total += 100;
+              topicMap[t].count += 1;
             });
             (learningStats?.topicsInProgress || []).forEach(t => {
               if (!topicMap[t]) topicMap[t] = { total: 0, count: 0 };
-              topicMap[t].total += 50; topicMap[t].count += 1;
+              topicMap[t].total += 50;
+              topicMap[t].count += 1;
             });
+
             const radarData = Object.entries(topicMap).slice(0, 8).map(([topic, { total, count }]) => ({
               topic: topic.length > 18 ? topic.slice(0, 16) + '…' : topic,
               strength: Math.round(total / count),
               fullMark: 100,
             }));
+
             if (radarData.length < 3) {
-              return <div className="text-gray-400 text-center py-8">Enroll in at least 3 courses to see your skill gap analysis.</div>;
+              return (
+                <div className="text-gray-400 text-center py-10">
+                  Enroll in at least 3 courses to unlock your skill gap analysis.
+                </div>
+              );
             }
+
+            const sorted = [...radarData].sort((a, b) => a.strength - b.strength);
+            const focusAreas = sorted.slice(0, 3);
+            const strengths = sorted.slice(-3).reverse();
+            const avgStrength = Math.round(radarData.reduce((sum, item) => sum + item.strength, 0) / radarData.length);
+            const avgGap = Math.max(0, 100 - avgStrength);
+
             return (
-              <ResponsiveContainer width="100%" height={380}>
-                <RadarChart data={radarData} outerRadius="75%">
-                  <PolarGrid stroke="#e5e7eb" />
-                  <PolarAngleAxis dataKey="topic" tick={{ fill: '#374151', fontSize: 12 }} />
-                  <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fill: '#9ca3af', fontSize: 10 }} />
-                  <Radar name="Strength" dataKey="strength" stroke="#6366f1" fill="#6366f1" fillOpacity={0.35} strokeWidth={2} />
-                </RadarChart>
-              </ResponsiveContainer>
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+                <div className="lg:col-span-2 bg-gradient-to-br from-indigo-50 to-blue-50 rounded-2xl border border-indigo-100 p-4">
+                  <ResponsiveContainer width="100%" height={360}>
+                    <RadarChart data={radarData} outerRadius="75%">
+                      <PolarGrid stroke="#e5e7eb" />
+                      <PolarAngleAxis dataKey="topic" tick={{ fill: '#374151', fontSize: 12 }} />
+                      <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fill: '#9ca3af', fontSize: 10 }} />
+                      <Radar name="Strength" dataKey="strength" stroke="#6366f1" fill="#6366f1" fillOpacity={0.35} strokeWidth={2} />
+                    </RadarChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="space-y-4">
+                  <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+                    <p className="text-xs uppercase tracking-widest text-indigo-600 font-semibold">Focus Score</p>
+                    <p className="text-3xl font-bold text-gray-900 mt-2">{avgStrength}%</p>
+                    <p className="text-sm text-gray-600">Average strength across topics</p>
+                    <div className="mt-3 h-2 bg-gray-200 rounded-full">
+                      <div className="h-2 bg-indigo-600 rounded-full" style={{ width: `${avgStrength}%` }} />
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">Gap remaining: {avgGap}%</p>
+                  </div>
+
+                  <div className="rounded-2xl border border-gray-100 bg-gradient-to-br from-orange-50 to-amber-50 p-4">
+                    <p className="text-sm font-semibold text-orange-800 mb-3">Top Focus Areas</p>
+                    <div className="space-y-3">
+                      {focusAreas.map((item, idx) => (
+                        <div key={idx}>
+                          <div className="flex items-center justify-between text-sm text-orange-900">
+                            <span className="font-medium">{item.topic}</span>
+                            <span>{item.strength}%</span>
+                          </div>
+                          <div className="mt-1 h-2 bg-orange-100 rounded-full">
+                            <div className="h-2 bg-orange-500 rounded-full" style={{ width: `${item.strength}%` }} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-gray-100 bg-gradient-to-br from-emerald-50 to-teal-50 p-4">
+                    <p className="text-sm font-semibold text-emerald-800 mb-3">Strongest Skills</p>
+                    <div className="space-y-3">
+                      {strengths.map((item, idx) => (
+                        <div key={idx}>
+                          <div className="flex items-center justify-between text-sm text-emerald-900">
+                            <span className="font-medium">{item.topic}</span>
+                            <span>{item.strength}%</span>
+                          </div>
+                          <div className="mt-1 h-2 bg-emerald-100 rounded-full">
+                            <div className="h-2 bg-emerald-500 rounded-full" style={{ width: `${item.strength}%` }} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
             );
           })()}
         </div>

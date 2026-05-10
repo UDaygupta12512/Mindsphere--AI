@@ -7,15 +7,30 @@ interface StudyTimerProps {
 
 type TimerMode = 'study' | 'shortBreak' | 'longBreak';
 
-const TIMER_PRESETS = {
-  study: 25 * 60,
+const BREAK_PRESETS = {
   shortBreak: 5 * 60,
   longBreak: 15 * 60,
 };
 
+const getPreferredStudySeconds = () => {
+  const stored = localStorage.getItem('ms-focus-sprint-minutes');
+  const minutes = stored ? parseInt(stored, 10) : 25;
+  if (!Number.isFinite(minutes)) return 25 * 60;
+  const bounded = Math.max(10, Math.min(90, minutes));
+  return bounded * 60;
+};
+
+const getDailyGoalMinutes = () => {
+  const stored = localStorage.getItem('ms-focus-goal-minutes');
+  const minutes = stored ? parseInt(stored, 10) : 60;
+  if (!Number.isFinite(minutes)) return 60;
+  return Math.max(15, Math.min(240, minutes));
+};
+
 const StudyTimer: React.FC<StudyTimerProps> = ({ onSessionComplete }) => {
   const [mode, setMode] = useState<TimerMode>('study');
-  const [timeLeft, setTimeLeft] = useState(TIMER_PRESETS.study);
+  const [studySeconds] = useState(getPreferredStudySeconds);
+  const [timeLeft, setTimeLeft] = useState(studySeconds);
   const [isRunning, setIsRunning] = useState(false);
   const [sessionsCompleted, setSessionsCompleted] = useState(0);
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -57,18 +72,18 @@ const StudyTimer: React.FC<StudyTimerProps> = ({ onSessionComplete }) => {
       if (mode === 'study') {
         const newSessionCount = sessionsCompleted + 1;
         setSessionsCompleted(newSessionCount);
-        onSessionComplete?.(TIMER_PRESETS.study / 60);
+        onSessionComplete?.(studySeconds / 60);
 
         if (newSessionCount % 4 === 0) {
           setMode('longBreak');
-          setTimeLeft(TIMER_PRESETS.longBreak);
+          setTimeLeft(BREAK_PRESETS.longBreak);
         } else {
           setMode('shortBreak');
-          setTimeLeft(TIMER_PRESETS.shortBreak);
+          setTimeLeft(BREAK_PRESETS.shortBreak);
         }
       } else {
         setMode('study');
-        setTimeLeft(TIMER_PRESETS.study);
+        setTimeLeft(studySeconds);
       }
       setIsRunning(false);
     }
@@ -84,18 +99,26 @@ const StudyTimer: React.FC<StudyTimerProps> = ({ onSessionComplete }) => {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const getModeSeconds = (targetMode: TimerMode) => {
+    if (targetMode === 'study') return studySeconds;
+    return targetMode === 'shortBreak' ? BREAK_PRESETS.shortBreak : BREAK_PRESETS.longBreak;
+  };
+
   const handleReset = () => {
     setIsRunning(false);
-    setTimeLeft(TIMER_PRESETS[mode]);
+    setTimeLeft(getModeSeconds(mode));
   };
 
   const handleModeChange = (newMode: TimerMode) => {
     setMode(newMode);
-    setTimeLeft(TIMER_PRESETS[newMode]);
+    setTimeLeft(getModeSeconds(newMode));
     setIsRunning(false);
   };
 
-  const progress = ((TIMER_PRESETS[mode] - timeLeft) / TIMER_PRESETS[mode]) * 100;
+  const progress = ((getModeSeconds(mode) - timeLeft) / getModeSeconds(mode)) * 100;
+  const totalStudyMinutes = Math.floor(totalStudyTime / 60);
+  const dailyGoalMinutes = getDailyGoalMinutes();
+  const dailyProgress = Math.min(100, Math.round((totalStudyMinutes / dailyGoalMinutes) * 100));
 
   const getModeColor = () => {
     switch (mode) {
@@ -211,8 +234,21 @@ const StudyTimer: React.FC<StudyTimerProps> = ({ onSessionComplete }) => {
           <p className="text-xs text-gray-500">Sessions Today</p>
         </div>
         <div className="text-center">
-          <p className="text-2xl font-bold text-gray-900">{Math.floor(totalStudyTime / 60)}m</p>
+          <p className="text-2xl font-bold text-gray-900">{totalStudyMinutes}m</p>
           <p className="text-xs text-gray-500">Focus Time</p>
+        </div>
+      </div>
+
+      <div className="mt-4 rounded-lg bg-gray-50 border border-gray-100 p-3">
+        <div className="flex items-center justify-between text-xs text-gray-600 mb-2">
+          <span>Daily focus goal</span>
+          <span className="font-semibold text-gray-800">{totalStudyMinutes}/{dailyGoalMinutes} min</span>
+        </div>
+        <div className="w-full bg-gray-200 rounded-full h-2">
+          <div
+            className="bg-gradient-to-r from-blue-500 to-purple-500 h-2 rounded-full transition-all"
+            style={{ width: `${dailyProgress}%` }}
+          />
         </div>
       </div>
     </div>

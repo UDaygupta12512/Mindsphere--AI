@@ -6,6 +6,115 @@ import { generateAIContent } from '../services/geminiService.js';
 
 const router = express.Router();
 
+const parseAiJsonObject = (aiResponse) => {
+  if (!aiResponse) return null;
+  if (typeof aiResponse === 'object') return aiResponse;
+  if (typeof aiResponse === 'string') {
+    try {
+      return JSON.parse(aiResponse);
+    } catch {
+      const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          return JSON.parse(jsonMatch[0]);
+        } catch {
+          return null;
+        }
+      }
+    }
+  }
+  return null;
+};
+
+const topicProgressionMap = {
+  Trees: ['Recursion', 'Dynamic Programming', 'Graphs'],
+  Recursion: ['Dynamic Programming', 'Backtracking'],
+  'Dynamic Programming': ['Graphs', 'Advanced Algorithms'],
+  Graphs: ['Advanced Algorithms', 'System Design'],
+  Python: ['Data Structures', 'Machine Learning', 'Django'],
+  JavaScript: ['React', 'Node.js', 'TypeScript'],
+  React: ['Next.js', 'State Management', 'Performance Optimization'],
+  'Node.js': ['Express', 'Databases', 'Microservices'],
+  SQL: ['Database Design', 'Query Optimization', 'Analytics'],
+  'Machine Learning': ['Deep Learning', 'MLOps', 'Model Evaluation'],
+  'Data Science': ['Machine Learning', 'Data Visualization', 'Statistics']
+};
+
+const normalizeTopic = (topic) => (topic || '').toString().trim();
+
+const findProgressionSuggestions = (topics) => {
+  const suggestions = [];
+  const topicSet = new Set(topics.map(normalizeTopic));
+
+  topics.forEach((topic) => {
+    const nextTopics = topicProgressionMap[topic] || [];
+    nextTopics.forEach((nextTopic) => {
+      if (!topicSet.has(nextTopic)) {
+        suggestions.push({ from: topic, to: nextTopic });
+      }
+    });
+  });
+
+  return suggestions;
+};
+
+const projectTemplates = {
+  react: {
+    projectIdea: 'Build a productivity dashboard with reusable hooks and reducer-driven state',
+    folderStructure: [
+      { path: 'src/components', purpose: 'UI components for project features' },
+      { path: 'src/hooks', purpose: 'Custom React hooks and state logic' },
+      { path: 'src/state', purpose: 'Reducer/actions and app state' },
+      { path: 'src/pages', purpose: 'Feature pages and navigation views' },
+      { path: 'src/utils', purpose: 'Helpers and formatters' }
+    ],
+    starterCode: [
+      {
+        path: 'src/hooks/useTaskReducer.ts',
+        language: 'typescript',
+        content: `import { useReducer } from 'react';\n\ntype Task = { id: string; title: string; done: boolean };\ntype Action =\n  | { type: 'add'; payload: { title: string } }\n  | { type: 'toggle'; payload: { id: string } };\n\nfunction reducer(state: Task[], action: Action): Task[] {\n  switch (action.type) {\n    case 'add':\n      return [...state, { id: crypto.randomUUID(), title: action.payload.title, done: false }];\n    case 'toggle':\n      return state.map(t => t.id === action.payload.id ? { ...t, done: !t.done } : t);\n    default:\n      return state;\n  }\n}\n\nexport function useTaskReducer() {\n  return useReducer(reducer, []);\n}`
+      }
+    ],
+    tasks: [
+      { title: 'Create reducer and task actions', description: 'Implement add/toggle/remove flows with useReducer.' },
+      { title: 'Build task list UI', description: 'Create task cards, filters, and completion badges.' },
+      { title: 'Persist state locally', description: 'Store task state in localStorage and hydrate on load.' },
+      { title: 'Add analytics panel', description: 'Show completed vs pending and daily progress summary.' }
+    ]
+  },
+  default: {
+    projectIdea: 'Build a focused learning app that applies the current topic in a practical workflow',
+    folderStructure: [
+      { path: 'src/core', purpose: 'Core domain logic for the topic' },
+      { path: 'src/features', purpose: 'Feature modules built incrementally' },
+      { path: 'src/challenges', purpose: 'Challenge solutions and variants' },
+      { path: 'src/tests', purpose: 'Validation and automated tests' },
+      { path: 'docs', purpose: 'Milestones and learning reflections' }
+    ],
+    starterCode: [
+      {
+        path: 'src/core/index.js',
+        language: 'javascript',
+        content: `export function startProject() {\n  return { status: 'ready', timestamp: Date.now() };\n}`
+      }
+    ],
+    tasks: [
+      { title: 'Define project scope', description: 'Write clear inputs, outputs, and success criteria.' },
+      { title: 'Implement core logic', description: 'Build the smallest usable version of the main flow.' },
+      { title: 'Add one advanced feature', description: 'Extend project with a topic-specific improvement.' },
+      { title: 'Test and document', description: 'Add tests and write implementation notes.' }
+    ]
+  }
+};
+
+const pickTemplateForTopic = (topic) => {
+  const normalized = normalizeTopic(topic).toLowerCase();
+  if (normalized.includes('react') || normalized.includes('hook')) return projectTemplates.react;
+  return projectTemplates.default;
+};
+
+const generateProjectId = () => `proj_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
 /**
  * POST /api/learning/generate-path
  * Generate a personalized learning path based on user's goal
@@ -222,6 +331,564 @@ router.get('/path/:courseId', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Error getting learning path:', error);
     res.status(500).json({ error: 'Failed to get learning path' });
+  }
+});
+
+/**
+ * POST /api/learning/smart-compression
+ * Create compressed learning views + concept dependencies + exam hotspots
+ * Body: { courseId }
+ */
+router.post('/smart-compression', authenticateToken, async (req, res) => {
+  try {
+    const { courseId } = req.body;
+
+    if (!courseId) {
+      return res.status(400).json({ error: 'Missing required field: courseId' });
+    }
+
+    const course = await Course.findById(courseId);
+    if (!course) {
+      return res.status(404).json({ error: 'Course not found' });
+    }
+
+    const lessonTitles = (course.lessons || []).slice(0, 12).map((l, i) => `${i + 1}. ${l.title}`).join('\n');
+    const noteSummary = (course.notes || []).slice(0, 8).map((n) => `${n.title}: ${Array.isArray(n.summary) ? n.summary.join('; ') : (n.summary || '')}`).join('\n');
+
+    const prompt = `You are a learning compression engine. Compress this course into multi-level explanations and concept dependencies.
+
+Course title: ${course.title}
+Course topics: ${(course.topics || []).join(', ')}
+Lessons:\n${lessonTitles}
+Notes:\n${noteSummary}
+
+Return ONLY JSON in this structure:
+{
+  "explainLike": {
+    "five": "Explain in very simple terms",
+    "fifteen": "Teen-friendly explanation",
+    "expert": "Technical concise explanation"
+  },
+  "dependencyGraph": {
+    "nodes": [{ "id": "n1", "label": "Concept", "group": "foundation|core|advanced" }],
+    "edges": [{ "from": "n1", "to": "n2", "reason": "why n1 leads to n2" }]
+  },
+  "examHotTopics": [
+    { "topic": "Topic", "whyImportant": "Why high frequency", "priority": "high|medium" }
+  ]
+}
+
+Rules:
+- Provide 5-8 nodes and 4-10 edges.
+- Highlight only high-frequency exam-relevant topics.
+- Keep language concise and specific.`;
+
+    let compression = null;
+    try {
+      const aiResponse = await generateAIContent(prompt, true);
+      compression = parseAiJsonObject(aiResponse);
+    } catch (aiError) {
+      console.error('Smart compression AI error:', aiError);
+    }
+
+    if (!compression) {
+      compression = {
+        explainLike: {
+          five: `${course.title} is about learning small ideas step by step, then combining them to solve bigger problems.`,
+          fifteen: `${course.title} teaches core concepts in sequence, then helps you apply them with practice and assessment.`,
+          expert: `${course.title} establishes foundational abstractions, layers operational patterns, and validates understanding through applied tasks.`
+        },
+        dependencyGraph: {
+          nodes: (course.topics || []).slice(0, 6).map((topic, index) => ({
+            id: `n${index + 1}`,
+            label: topic,
+            group: index < 2 ? 'foundation' : index < 4 ? 'core' : 'advanced'
+          })),
+          edges: (course.topics || []).slice(0, 5).map((topic, index) => ({
+            from: `n${index + 1}`,
+            to: `n${index + 2}`,
+            reason: `${topic} supports the next concept`
+          }))
+        },
+        examHotTopics: (course.topics || []).slice(0, 4).map((topic) => ({
+          topic,
+          whyImportant: 'Frequently tested core concept with strong fundamentals impact.',
+          priority: 'high'
+        }))
+      };
+    }
+
+    res.json({
+      success: true,
+      courseTitle: course.title,
+      compression
+    });
+  } catch (error) {
+    console.error('Error generating smart compression:', error);
+    res.status(500).json({ error: 'Failed to generate smart compression' });
+  }
+});
+
+/**
+ * POST /api/learning/build-mode
+ * Connect learning to doing with tasks, challenges, and project skeleton
+ * Body: { courseId }
+ */
+router.post('/build-mode', authenticateToken, async (req, res) => {
+  try {
+    const { courseId } = req.body;
+
+    if (!courseId) {
+      return res.status(400).json({ error: 'Missing required field: courseId' });
+    }
+
+    const course = await Course.findById(courseId);
+    if (!course) {
+      return res.status(404).json({ error: 'Course not found' });
+    }
+
+    const prompt = `You are an educational project coach. Convert this course into build-while-learning mode.
+
+Course title: ${course.title}
+Topics: ${(course.topics || []).join(', ')}
+Lessons: ${(course.lessons || []).slice(0, 12).map((l) => l.title).join(', ')}
+
+Return ONLY JSON in this structure:
+{
+  "miniTasks": [
+    { "title": "Task", "objective": "Outcome", "estimatedMinutes": 20, "linkedTopic": "Topic" }
+  ],
+  "codeChallenges": [
+    { "title": "Challenge", "prompt": "Problem statement", "difficulty": "easy|medium|hard", "starterHint": "Hint" }
+  ],
+  "projectSkeleton": {
+    "projectName": "Name",
+    "description": "One-line description",
+    "folders": [{ "path": "src/components", "purpose": "Why this folder exists" }],
+    "milestones": ["Milestone 1", "Milestone 2", "Milestone 3"]
+  }
+}
+
+Rules:
+- 4-7 mini tasks
+- 3-5 code challenges
+- 5-8 practical folders
+- milestone sequence should represent build progression.`;
+
+    let buildMode = null;
+    try {
+      const aiResponse = await generateAIContent(prompt, true);
+      buildMode = parseAiJsonObject(aiResponse);
+    } catch (aiError) {
+      console.error('Build mode AI error:', aiError);
+    }
+
+    if (!buildMode) {
+      buildMode = {
+        miniTasks: (course.topics || []).slice(0, 5).map((topic, index) => ({
+          title: `Mini task ${index + 1}: ${topic}`,
+          objective: `Apply ${topic} in a focused hands-on activity.`,
+          estimatedMinutes: 20,
+          linkedTopic: topic
+        })),
+        codeChallenges: [
+          {
+            title: `${course.title} Core Logic Challenge`,
+            prompt: 'Implement a small feature that demonstrates the core concept.',
+            difficulty: 'easy',
+            starterHint: 'Break the feature into input, processing, and output steps.'
+          },
+          {
+            title: `${course.title} Integration Challenge`,
+            prompt: 'Combine at least two learned concepts in one solution.',
+            difficulty: 'medium',
+            starterHint: 'Reuse previous mini tasks and integrate incrementally.'
+          }
+        ],
+        projectSkeleton: {
+          projectName: `${course.title.replace(/\s+/g, '-')}-lab`,
+          description: 'A guided project built while progressing through the course.',
+          folders: [
+            { path: 'src', purpose: 'Application source code' },
+            { path: 'src/features', purpose: 'Feature modules aligned to topics' },
+            { path: 'src/challenges', purpose: 'Challenge implementations' },
+            { path: 'src/tests', purpose: 'Validation and tests' },
+            { path: 'docs', purpose: 'Learning notes and reflection logs' }
+          ],
+          milestones: [
+            'Set up the starter project',
+            'Build core feature modules',
+            'Complete code challenges',
+            'Integrate and polish final project'
+          ]
+        }
+      };
+    }
+
+    res.json({
+      success: true,
+      courseTitle: course.title,
+      buildMode
+    });
+  } catch (error) {
+    console.error('Error generating build mode:', error);
+    res.status(500).json({ error: 'Failed to generate build mode plan' });
+  }
+});
+
+/**
+ * GET /api/learning/daily-plan/auto
+ * Auto-generate today's plan using progress, weak areas, and spaced repetition queue
+ */
+router.get('/daily-plan/auto', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const userCourses = await Course.find({ _id: { $in: user.courses || [] } });
+    const inProgressCourses = userCourses.filter(c => c.progress > 0 && c.progress < 100);
+    const dueReviews = (user.srsItems || [])
+      .filter(item => new Date(item.nextReview) <= new Date())
+      .sort((a, b) => b.difficulty - a.difficulty)
+      .slice(0, 8);
+
+    const weakAttempts = (user.quizAttempts || []).filter(a => (a.score || 0) < 70);
+    const weakTopicMap = new Map();
+    weakAttempts.forEach((attempt) => {
+      const topic = normalizeTopic(attempt.topic) || 'General';
+      const current = weakTopicMap.get(topic) || { topic, count: 0, minScore: 100 };
+      current.count += 1;
+      current.minScore = Math.min(current.minScore, attempt.score || 0);
+      weakTopicMap.set(topic, current);
+    });
+
+    const weakTopics = Array.from(weakTopicMap.values())
+      .sort((a, b) => b.count - a.count || a.minScore - b.minScore)
+      .slice(0, 3)
+      .map(t => t.topic);
+
+    const fallbackPlan = {
+      date: new Date().toISOString(),
+      focus: weakTopics[0] || inProgressCourses[0]?.title || 'Core revision',
+      tasks: [
+        {
+          type: 'review',
+          title: 'Memory-based revision session',
+          durationMinutes: 20,
+          reason: dueReviews.length > 0 ? `You have ${dueReviews.length} due review items` : 'Reinforce long-term retention'
+        },
+        {
+          type: 'weak-area',
+          title: weakTopics.length > 0 ? `Fix weak area: ${weakTopics[0]}` : 'Attempt a quick diagnostic quiz',
+          durationMinutes: 25,
+          reason: weakTopics.length > 0 ? 'Score trend below 70% detected' : 'Collect performance signal'
+        },
+        {
+          type: 'progress',
+          title: inProgressCourses[0] ? `Continue ${inProgressCourses[0].title}` : 'Start next lesson',
+          durationMinutes: 30,
+          reason: 'Sustain daily momentum'
+        }
+      ],
+      goals: [
+        'Complete all due spaced-repetition reviews',
+        'Improve one weak topic by active recall',
+        'Finish one meaningful learning block'
+      ]
+    };
+
+    const prompt = `Create a concise daily learning plan for this user.
+
+In-progress courses: ${inProgressCourses.map(c => `${c.title} (${c.progress}%)`).join(', ') || 'None'}
+Weak topics: ${weakTopics.join(', ') || 'None'}
+Due memory reviews: ${dueReviews.length}
+
+Return ONLY JSON:
+{
+  "date": "ISO date",
+  "focus": "main focus",
+  "tasks": [
+    { "type": "review|weak-area|progress", "title": "task", "durationMinutes": 20, "reason": "why now" }
+  ],
+  "goals": ["goal 1", "goal 2", "goal 3"]
+}
+
+Rules: 3-5 tasks, total 60-120 minutes, prioritize due memory reviews and weak topics.`;
+
+    let dailyPlan = null;
+    try {
+      const aiResponse = await generateAIContent(prompt, true);
+      dailyPlan = parseAiJsonObject(aiResponse);
+    } catch (aiError) {
+      console.error('Daily plan AI error:', aiError);
+    }
+
+    res.json({
+      success: true,
+      dailyPlan: dailyPlan && dailyPlan.tasks ? dailyPlan : fallbackPlan,
+      signals: {
+        dueReviews: dueReviews.length,
+        weakTopics,
+        inProgressCourses: inProgressCourses.length
+      }
+    });
+  } catch (error) {
+    console.error('Error generating auto daily plan:', error);
+    res.status(500).json({ error: 'Failed to generate daily plan' });
+  }
+});
+
+/**
+ * GET /api/learning/knowledge-graph
+ * Build personal knowledge graph showing learned topics, gaps, and recommended path
+ */
+router.get('/knowledge-graph', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const userCourses = await Course.find({ _id: { $in: user.courses || [] } });
+    const topicStats = new Map();
+
+    userCourses.forEach((course) => {
+      (course.topics || []).forEach((rawTopic) => {
+        const topic = normalizeTopic(rawTopic);
+        if (!topic) return;
+
+        const current = topicStats.get(topic) || {
+          topic,
+          maxProgress: 0,
+          appearances: 0,
+          courseTitles: new Set()
+        };
+
+        current.appearances += 1;
+        current.maxProgress = Math.max(current.maxProgress, course.progress || 0);
+        current.courseTitles.add(course.title);
+        topicStats.set(topic, current);
+      });
+    });
+
+    const weakTopicSet = new Set(
+      (user.quizAttempts || [])
+        .filter(a => (a.score || 0) < 70)
+        .map(a => normalizeTopic(a.topic))
+        .filter(Boolean)
+    );
+
+    const knownTopics = Array.from(topicStats.keys());
+    const progressionSuggestions = findProgressionSuggestions(knownTopics);
+
+    const nodes = knownTopics.map((topic, index) => {
+      const stat = topicStats.get(topic);
+      const state = weakTopicSet.has(topic)
+        ? 'weak'
+        : stat.maxProgress >= 90
+        ? 'mastered'
+        : stat.maxProgress >= 40
+        ? 'learning'
+        : 'new';
+
+      return {
+        id: `k${index + 1}`,
+        label: topic,
+        state,
+        progress: stat.maxProgress,
+        evidenceCount: stat.appearances
+      };
+    });
+
+    const nodeIdByLabel = new Map(nodes.map((n) => [n.label, n.id]));
+    const edges = [];
+
+    progressionSuggestions.forEach((link) => {
+      const fromId = nodeIdByLabel.get(link.from);
+      const toId = nodeIdByLabel.get(link.to);
+      if (fromId && toId) {
+        edges.push({ from: fromId, to: toId, relation: 'prerequisite' });
+      }
+    });
+
+    const gaps = progressionSuggestions
+      .filter(link => !nodeIdByLabel.has(link.to))
+      .slice(0, 6)
+      .map(link => ({ from: link.from, missing: link.to }));
+
+    const recommendedPath = [];
+    if (knownTopics.includes('Trees')) {
+      recommendedPath.push('Trees', 'Recursion', 'Dynamic Programming', 'Graphs');
+    } else {
+      const learned = nodes.filter(n => n.state === 'learning' || n.state === 'mastered').slice(0, 2).map(n => n.label);
+      const next = gaps.slice(0, 2).map(g => g.missing);
+      recommendedPath.push(...learned, ...next);
+    }
+
+    res.json({
+      success: true,
+      graph: {
+        nodes,
+        edges,
+        gaps,
+        recommendedPath: Array.from(new Set(recommendedPath)).filter(Boolean)
+      }
+    });
+  } catch (error) {
+    console.error('Error building knowledge graph:', error);
+    res.status(500).json({ error: 'Failed to build knowledge graph' });
+  }
+});
+
+/**
+ * POST /api/learning/project-builder/generate
+ * Generate an auto project from the user's current learning topic
+ * Body: { courseId, topic }
+ */
+router.post('/project-builder/generate', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { courseId, topic } = req.body;
+
+    if (!courseId || !topic) {
+      return res.status(400).json({ error: 'Missing required fields: courseId and topic' });
+    }
+
+    const user = await User.findById(userId);
+    const course = await Course.findById(courseId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!course) return res.status(404).json({ error: 'Course not found' });
+
+    const template = pickTemplateForTopic(topic);
+
+    const prompt = `You are a project-based learning coach. Customize this project template to the topic.
+
+Topic: ${topic}
+Course: ${course.title}
+Base project idea: ${template.projectIdea}
+
+Return ONLY JSON:
+{
+  "projectIdea": "customized project idea",
+  "folderStructure": [{ "path": "src/...", "purpose": "..." }],
+  "starterCode": [{ "path": "src/file.ext", "language": "javascript|typescript|python", "content": "code" }],
+  "tasks": [{ "title": "task", "description": "what to build" }],
+  "milestones": ["step 1", "step 2", "step 3"]
+}
+
+Rules: 4-7 tasks, practical progression, and topic-specific outcomes.`;
+
+    let customized = null;
+    try {
+      const aiResponse = await generateAIContent(prompt, true);
+      customized = parseAiJsonObject(aiResponse);
+    } catch (aiError) {
+      console.error('Project builder AI error:', aiError);
+    }
+
+    const source = customized && customized.tasks ? customized : template;
+    const projectId = generateProjectId();
+    const tasks = (source.tasks || []).map((task, index) => ({
+      taskId: `task_${index + 1}`,
+      title: task.title,
+      description: task.description,
+      completed: false
+    }));
+
+    const project = {
+      projectId,
+      courseId: course._id,
+      courseTitle: course.title,
+      topic,
+      projectIdea: source.projectIdea || template.projectIdea,
+      folderStructure: source.folderStructure || template.folderStructure,
+      starterCode: source.starterCode || template.starterCode,
+      tasks,
+      completionPercent: 0,
+      status: 'not-started',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      milestones: source.milestones || []
+    };
+
+    user.learningProjects = user.learningProjects || [];
+    user.learningProjects.push(project);
+    if (user.learningProjects.length > 100) {
+      user.learningProjects = user.learningProjects.slice(-100);
+    }
+    await user.save();
+
+    res.json({ success: true, project });
+  } catch (error) {
+    console.error('Error generating auto project:', error);
+    res.status(500).json({ error: 'Failed to generate auto project' });
+  }
+});
+
+/**
+ * GET /api/learning/project-builder
+ * List generated projects for the current user, optionally filtered by course
+ */
+router.get('/project-builder', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { courseId } = req.query;
+    const user = await User.findById(userId).select('learningProjects');
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    let projects = user.learningProjects || [];
+    if (courseId) {
+      projects = projects.filter(p => p.courseId && p.courseId.toString() === courseId.toString());
+    }
+
+    projects = [...projects].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+    res.json({ success: true, projects });
+  } catch (error) {
+    console.error('Error fetching projects:', error);
+    res.status(500).json({ error: 'Failed to fetch project list' });
+  }
+});
+
+/**
+ * PATCH /api/learning/project-builder/:projectId/tasks/:taskId
+ * Update task completion and project progress
+ * Body: { completed: boolean }
+ */
+router.patch('/project-builder/:projectId/tasks/:taskId', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { projectId, taskId } = req.params;
+    const { completed } = req.body;
+
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const projectIndex = (user.learningProjects || []).findIndex(p => p.projectId === projectId);
+    if (projectIndex === -1) return res.status(404).json({ error: 'Project not found' });
+
+    const project = user.learningProjects[projectIndex];
+    const taskIndex = (project.tasks || []).findIndex(t => t.taskId === taskId);
+    if (taskIndex === -1) return res.status(404).json({ error: 'Task not found' });
+
+    project.tasks[taskIndex].completed = Boolean(completed);
+
+    const totalTasks = project.tasks.length || 1;
+    const doneCount = project.tasks.filter(t => t.completed).length;
+    project.completionPercent = Math.round((doneCount / totalTasks) * 100);
+    project.status = doneCount === 0 ? 'not-started' : doneCount === totalTasks ? 'completed' : 'in-progress';
+    project.updatedAt = new Date();
+
+    user.learningProjects[projectIndex] = project;
+    await user.save();
+
+    res.json({ success: true, project });
+  } catch (error) {
+    console.error('Error updating project task:', error);
+    res.status(500).json({ error: 'Failed to update project task' });
   }
 });
 

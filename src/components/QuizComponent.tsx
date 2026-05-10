@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { CheckCircle, XCircle, RefreshCw, Award, Brain, Zap, FileText, Loader2 } from 'lucide-react';
 import { Quiz } from '../types/course';
-import { api, srsApi, learningApi, GapReport } from '../lib/api';
+import { api, srsApi, learningApi, GapReport, quizApi } from '../lib/api';
 import GapReportModal from './GapReportModal';
 
 interface QuizComponentProps {
@@ -9,9 +9,10 @@ interface QuizComponentProps {
   onComplete: (score: number) => void;
   courseId?: string;
   onQuizzesUpdated?: (quizzes: Quiz[]) => void;
+  onQuizResults?: (results: Array<{ question: string; userAnswer: string; correctAnswer: string; isCorrect: boolean; topic?: string }>, score: number) => void;
 }
 
-const QuizComponent: React.FC<QuizComponentProps> = ({ quizzes, onComplete, courseId, onQuizzesUpdated }) => {
+const QuizComponent: React.FC<QuizComponentProps> = ({ quizzes, onComplete, courseId, onQuizzesUpdated, onQuizResults }) => {
   const [currentQuizIndex] = useState(0);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [selectedAnswer, setSelectedAnswer] = useState<string>('');
@@ -26,6 +27,7 @@ const QuizComponent: React.FC<QuizComponentProps> = ({ quizzes, onComplete, cour
   const [finalScore, setFinalScore] = useState(0);
   const [correctCount, setCorrectCount] = useState(0);
   const [wrongCount, setWrongCount] = useState(0);
+  const [microSyllabus, setMicroSyllabus] = useState<Array<{ title: string; detail: string }>>([]);
 
   const currentQuiz = quizzes && quizzes.length > 0 ? quizzes[currentQuizIndex] : null;
   const currentQuestion = currentQuiz && currentQuiz.questions && currentQuiz.questions.length > 0 ? currentQuiz.questions[currentQuestionIndex] : null;
@@ -131,6 +133,7 @@ const QuizComponent: React.FC<QuizComponentProps> = ({ quizzes, onComplete, cour
         userAnswer: string;
         correctAnswer: string;
         isCorrect: boolean;
+        topic?: string;
       }> = [];
 
       for (let i = 0; i < totalQuestions; i++) {
@@ -146,7 +149,8 @@ const QuizComponent: React.FC<QuizComponentProps> = ({ quizzes, onComplete, cour
           question: question.question,
           userAnswer: userAnswer || '',
           correctAnswer: question.correctAnswer,
-          isCorrect
+          isCorrect,
+          topic: question.question.split(' ').slice(0, 3).join(' ')
         });
       }
 
@@ -156,6 +160,34 @@ const QuizComponent: React.FC<QuizComponentProps> = ({ quizzes, onComplete, cour
       setWrongCount(totalQuestions - correctAnswers);
       setQuizCompleted(true);
       onComplete(score);
+
+      if (onQuizResults) {
+        onQuizResults(quizResults, score);
+      }
+
+      const weakTopics = quizResults
+        .filter(r => !r.isCorrect)
+        .map(r => r.topic || '')
+        .filter(Boolean);
+
+      const topWeak = Array.from(new Set(weakTopics)).slice(0, 3);
+      const microPlan = topWeak.length > 0
+        ? topWeak.map((topic, index) => {
+            if (index === 0) {
+              return { title: `Revisit: ${topic}`, detail: 'Review the key lesson and summarize the core idea.' };
+            }
+            if (index === 1) {
+              return { title: `Practice: ${topic}`, detail: 'Run 5 flashcards to reinforce definitions and steps.' };
+            }
+            return { title: `Apply: ${topic}`, detail: 'Try 3 quick questions and explain the concept aloud.' };
+          })
+        : [
+            { title: 'Reinforce strengths', detail: 'Skim your strongest lesson and write 3 takeaways.' },
+            { title: 'Speed review', detail: 'Complete a short flashcard round to lock in memory.' },
+            { title: 'Apply knowledge', detail: 'Solve 2 practice questions without notes.' }
+          ];
+
+      setMicroSyllabus(microPlan);
 
       // Generate Gap Report if there are wrong answers
       if (courseId && totalQuestions - correctAnswers > 0) {
@@ -171,6 +203,19 @@ const QuizComponent: React.FC<QuizComponentProps> = ({ quizzes, onComplete, cour
           console.error('Error generating gap report:', error);
         } finally {
           setIsGeneratingGapReport(false);
+        }
+      }
+
+      // Persist attempt history for weak-area tracking
+      if (courseId) {
+        try {
+          await quizApi.recordAttempt({
+            courseId,
+            score,
+            quizResults
+          });
+        } catch (error) {
+          console.error('Error storing quiz attempt:', error);
         }
       }
 
@@ -202,6 +247,7 @@ const QuizComponent: React.FC<QuizComponentProps> = ({ quizzes, onComplete, cour
     setFinalScore(0);
     setCorrectCount(0);
     setWrongCount(0);
+    setMicroSyllabus([]);
   };
 
   const handleGenerateMoreQuestions = async () => {
@@ -287,6 +333,25 @@ const QuizComponent: React.FC<QuizComponentProps> = ({ quizzes, onComplete, cour
             <div className="text-4xl font-bold text-gray-900 mb-2">{score}%</div>
             <div className="text-gray-600">
               {correctAnswers} out of {totalQuestions} correct
+            </div>
+          </div>
+        </div>
+
+        {/* Micro-Syllabus */}
+        <div className="mb-8 max-w-2xl mx-auto">
+          <div className="bg-gradient-to-r from-indigo-50 to-blue-50 rounded-2xl p-6 border border-indigo-100">
+            <h4 className="text-lg font-bold text-gray-900 mb-3">Your 3-Step Micro-Syllabus</h4>
+            <div className="space-y-3">
+              {microSyllabus.map((step, index) => (
+                <div key={`${step.title}-${index}`} className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-indigo-700">Step {index + 1}</span>
+                    <span className="text-xs text-gray-500">10-15 min</span>
+                  </div>
+                  <p className="text-base font-semibold text-gray-900 mt-1">{step.title}</p>
+                  <p className="text-sm text-gray-600 mt-1">{step.detail}</p>
+                </div>
+              ))}
             </div>
           </div>
         </div>
